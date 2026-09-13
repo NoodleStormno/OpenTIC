@@ -3,6 +3,7 @@
 
 #include "ai.h"
 #include "studio/studio.h"
+#include "studio/studio_hires.h"
 #include "studio/system.h"
 #include "studio/project.h"
 #include "tools.h"
@@ -21,28 +22,28 @@
 #include "naett.h"
 #endif
 
-// High-resolution screen layout dimensions
-#define AI_FULL_WIDTH   512
-#define AI_FULL_HEIGHT  288
-#define AI_VIEW_WIDTH   480
-#define AI_VIEW_HEIGHT  272
-#define AI_OFFSET_LEFT  16
-#define AI_OFFSET_TOP   8
+// High-resolution 1080p screen layout dimensions
+#define AI_FULL_WIDTH   1920
+#define AI_FULL_HEIGHT  1080
+#define AI_VIEW_WIDTH   1920
+#define AI_VIEW_HEIGHT  1080
+#define AI_OFFSET_LEFT  0
+#define AI_OFFSET_TOP   0
 
-#define AI_FONT_SIZE    15.0f
-#define AI_LINE_HEIGHT  16
+#define AI_FONT_SIZE    22.0f
+#define AI_LINE_HEIGHT  32
 
-#define TOOLBAR_Y       (AI_OFFSET_TOP)
-#define TOOLBAR_H       16
+#define TOOLBAR_Y       0
+#define TOOLBAR_H       48
 
-#define CHAT_TOP        (TOOLBAR_Y + TOOLBAR_H + 2)
-#define INPUT_H         20
-#define INPUT_Y         (AI_OFFSET_TOP + AI_VIEW_HEIGHT - INPUT_H)
-#define CHAT_BOTTOM     (INPUT_Y - 2)
+#define CHAT_TOP        (TOOLBAR_Y + TOOLBAR_H + 16)
+#define INPUT_H         54
+#define INPUT_Y         (AI_FULL_HEIGHT - INPUT_H - 24)
+#define CHAT_BOTTOM     (INPUT_Y - 16)
 #define CHAT_VIEW_H     (CHAT_BOTTOM - CHAT_TOP)
 
-#define CHAT_X_LEFT     (AI_OFFSET_LEFT + 8)
-#define CHAT_X_RIGHT    (AI_OFFSET_LEFT + AI_VIEW_WIDTH - 8)
+#define CHAT_X_LEFT     64
+#define CHAT_X_RIGHT    (AI_FULL_WIDTH - 64)
 
 static void sendUserPrompt(AiEditor* ai);
 
@@ -313,9 +314,9 @@ static s32 drawTextUTF8Ex(AiEditor* ai, const char* str, s32 firstX, s32 wrapX, 
 
                 stbtt_GetGlyphHMetrics(info, glyph, &adv, &lsb);
                 charWidth = (s32)(adv * ai->fontScale + 0.5f);
-                if (charWidth <= 0) charWidth = (cp < 128) ? 8 : 14;
-                if (cp < 128 && charWidth < 7 && cp != ' ') charWidth = 7;
-                if (cp >= 128 && charWidth < 12) charWidth = 12;
+                if (charWidth <= 0) charWidth = (cp < 128) ? 12 : 22;
+                if (cp < 128 && charWidth < 10 && cp != ' ') charWidth = 10;
+                if (cp >= 128 && charWidth < 18) charWidth = 18;
 
                 if (curX + charWidth > CHAT_X_RIGHT)
                 {
@@ -339,11 +340,11 @@ static s32 drawTextUTF8Ex(AiEditor* ai, const char* str, s32 firstX, s32 wrapX, 
                             for (bx = 0; bx < w; bx++)
                             {
                                 s32 px = drawX + bx;
-                                if (px >= AI_OFFSET_LEFT && px < AI_OFFSET_LEFT + AI_VIEW_WIDTH)
+                                if (px >= 0 && px < AI_FULL_WIDTH)
                                 {
                                     u8 alpha = bmp[by * w + bx];
                                     // Non-antialiased crisp 1-bit pixel stroke
-                                    if (alpha >= 90)
+                                    if (alpha >= 70)
                                     {
                                         hiresPixel(ai, px, py, color);
                                     }
@@ -360,7 +361,7 @@ static s32 drawTextUTF8Ex(AiEditor* ai, const char* str, s32 firstX, s32 wrapX, 
         }
 
         // Fallback for basic ASCII
-        if (curX + 8 > CHAT_X_RIGHT)
+        if (curX + 12 > CHAT_X_RIGHT)
         {
             curX = wrapX;
             curY += AI_LINE_HEIGHT;
@@ -369,7 +370,7 @@ static s32 drawTextUTF8Ex(AiEditor* ai, const char* str, s32 firstX, s32 wrapX, 
         {
             drawFallbackAsciiChar(ai, (char)cp, curX, curY + 1, color, clipYTop, clipYBottom);
         }
-        curX += 8;
+        curX += 12;
     }
 
     return (curY - y) + AI_LINE_HEIGHT;
@@ -391,7 +392,7 @@ static s32 measureTextWidth(AiEditor* ai, const char* str)
     while (*p)
     {
         u32 cp = utf8_decode(&p);
-        s32 charWidth = 8;
+        s32 charWidth = 12;
         if (ai->fontLoaded && info)
         {
             int glyph = stbtt_FindGlyphIndex(info, (int)cp);
@@ -400,9 +401,9 @@ static s32 measureTextWidth(AiEditor* ai, const char* str)
                 int adv, lsb;
                 stbtt_GetGlyphHMetrics(info, glyph, &adv, &lsb);
                 charWidth = (s32)(adv * ai->fontScale + 0.5f);
-                if (charWidth <= 0) charWidth = (cp < 128) ? 8 : 14;
-                if (cp < 128 && charWidth < 7 && cp != ' ') charWidth = 7;
-                if (cp >= 128 && charWidth < 12) charWidth = 12;
+                if (charWidth <= 0) charWidth = (cp < 128) ? 12 : 22;
+                if (cp < 128 && charWidth < 10 && cp != ' ') charWidth = 10;
+                if (cp >= 128 && charWidth < 18) charWidth = 18;
             }
         }
         curX += charWidth;
@@ -425,9 +426,6 @@ static s32 measureTextHeightEx(AiEditor* ai, const char* str, s32 firstX, s32 wr
 
     while (*p)
     {
-        u32 cp;
-        s32 charWidth = 8;
-
         if (*p == '\n')
         {
             p++;
@@ -436,7 +434,8 @@ static s32 measureTextHeightEx(AiEditor* ai, const char* str, s32 firstX, s32 wr
             continue;
         }
 
-        cp = utf8_decode(&p);
+        u32 cp = utf8_decode(&p);
+        s32 charWidth = 12;
 
         if (ai->fontLoaded && info)
         {
@@ -446,9 +445,9 @@ static s32 measureTextHeightEx(AiEditor* ai, const char* str, s32 firstX, s32 wr
                 int adv, lsb;
                 stbtt_GetGlyphHMetrics(info, glyph, &adv, &lsb);
                 charWidth = (s32)(adv * ai->fontScale + 0.5f);
-                if (charWidth <= 0) charWidth = (cp < 128) ? 8 : 14;
-                if (cp < 128 && charWidth < 7 && cp != ' ') charWidth = 7;
-                if (cp >= 128 && charWidth < 12) charWidth = 12;
+                if (charWidth <= 0) charWidth = (cp < 128) ? 12 : 22;
+                if (cp < 128 && charWidth < 10 && cp != ' ') charWidth = 10;
+                if (cp >= 128 && charWidth < 18) charWidth = 18;
             }
         }
 
@@ -515,7 +514,7 @@ static s32 computeInputLayout(AiEditor* ai, InputLineInfo* lines, s32 maxLines, 
         const char* charStart = p;
         u32 cp = utf8_decode(&p);
         s32 charBytes = (s32)(p - charStart);
-        s32 charW = 8;
+        s32 charW = 12;
         if (ai->fontLoaded && info)
         {
             int glyph = stbtt_FindGlyphIndex(info, (int)cp);
@@ -524,9 +523,9 @@ static s32 computeInputLayout(AiEditor* ai, InputLineInfo* lines, s32 maxLines, 
                 int adv, lsb;
                 stbtt_GetGlyphHMetrics(info, glyph, &adv, &lsb);
                 charW = (s32)(adv * ai->fontScale + 0.5f);
-                if (charW <= 0) charW = (cp < 128) ? 8 : 14;
-                if (cp < 128 && charW < 7 && cp != ' ') charW = 7;
-                if (cp >= 128 && charW < 12) charW = 12;
+                if (charW <= 0) charW = (cp < 128) ? 12 : 22;
+                if (cp < 128 && charW < 10 && cp != ' ') charW = 10;
+                if (cp >= 128 && charW < 18) charW = 18;
             }
         }
 
@@ -646,13 +645,13 @@ static void drawSlashPopup(AiEditor* ai)
     if (!ai->popupActive || ai->matchCount <= 0) return;
 
     s32 count = ai->matchCount;
-    s32 itemH = 18;
-    s32 menuW = 460;
-    s32 headerH = 16;
-    s32 menuH = headerH + count * itemH + 4;
-    s32 menuX = AI_OFFSET_LEFT + 10;
+    s32 itemH = 36;
+    s32 menuW = 800;
+    s32 headerH = 32;
+    s32 menuH = headerH + count * itemH + 6;
+    s32 menuX = CHAT_X_LEFT;
     s32 inputTop = ai->inputY > 0 ? ai->inputY : INPUT_Y;
-    s32 menuY = inputTop - menuH - 2;
+    s32 menuY = inputTop - menuH - 8;
 
     u32 colBlack     = getAiPaletteColor(ai, tic_color_black);
     u32 colBlue      = getAiPaletteColor(ai, tic_color_blue);
@@ -668,15 +667,15 @@ static void drawSlashPopup(AiEditor* ai)
 
     // Header bar
     hiresRect(ai, menuX + 1, menuY + 1, menuW - 2, headerH, colDarkBlue);
-    drawTextUTF8(ai, "指令菜单 (↑↓选择, Tab/Enter确认, Esc关闭, 支持鼠标点击)", menuX + 8, menuY + 1, colYellow, menuY, menuY + headerH);
+    drawTextUTF8(ai, "指令菜单 (↑↓选择, Tab/Enter确认, Esc关闭, 支持鼠标点击)", menuX + 16, menuY + 2, colYellow, menuY, menuY + headerH);
 
-    // Mouse coordinates in 512x288
+    // Mouse coordinates in 1920x1080
     s32 mx = ai->mouseX;
     s32 my = ai->mouseY;
     if (mx < 0 && ai->tic)
     {
-        mx = ai->tic->ram->input.mouse.x * 2;
-        my = ai->tic->ram->input.mouse.y * 2;
+        mx = ai->tic->ram->input.mouse.x * 1920 / 256;
+        my = ai->tic->ram->input.mouse.y * 1080 / 144;
     }
     bool mclick = ai->tic ? (ai->tic->ram->input.mouse.left && !ai->prevMouseLeft) : false;
 
@@ -701,14 +700,14 @@ static void drawSlashPopup(AiEditor* ai)
         {
             hiresRect(ai, menuX + 1, iy, menuW - 2, itemH, colDarkBlue);
             hiresRectBorder(ai, menuX + 1, iy, menuW - 2, itemH, colBlue);
-            drawTextUTF8(ai, ">", menuX + 6, iy + 1, colYellow, iy, iy + itemH);
-            drawTextUTF8(ai, sc->syntax, menuX + 18, iy + 1, colYellow, iy, iy + itemH);
-            drawTextUTF8(ai, sc->desc, menuX + 220, iy + 1, colWhite, iy, iy + itemH);
+            drawTextUTF8(ai, ">", menuX + 10, iy + 2, colYellow, iy, iy + itemH);
+            drawTextUTF8(ai, sc->syntax, menuX + 32, iy + 2, colYellow, iy, iy + itemH);
+            drawTextUTF8(ai, sc->desc, menuX + 380, iy + 2, colWhite, iy, iy + itemH);
         }
         else
         {
-            drawTextUTF8(ai, sc->syntax, menuX + 18, iy + 1, colLightBlue, iy, iy + itemH);
-            drawTextUTF8(ai, sc->desc, menuX + 220, iy + 1, colLightGrey, iy, iy + itemH);
+            drawTextUTF8(ai, sc->syntax, menuX + 32, iy + 2, colLightBlue, iy, iy + itemH);
+            drawTextUTF8(ai, sc->desc, menuX + 380, iy + 2, colLightGrey, iy, iy + itemH);
         }
     }
 }
@@ -1038,105 +1037,33 @@ static inline bool aiEnterWasPressed(tic_mem* tic)
 
 static void drawToolbarHires(AiEditor* ai)
 {
-    static const EditorMode Modes[] = {TIC_CODE_MODE, TIC_SPRITE_MODE, TIC_MAP_MODE, TIC_SFX_MODE, TIC_MUSIC_MODE, TIC_AI_MODE};
-    static const u8 Icons[] = {tic_icon_code, tic_icon_sprite, tic_icon_map, tic_icon_sfx, tic_icon_music, tic_icon_ai};
-    static const char* Tips[] = {"CODE EDITOR [f1]", "SPRITE EDITOR [f2]", "MAP EDITOR [f3]", "SFX EDITOR [f4]", "MUSIC EDITOR [f5]", "AI ASSISTANT [f6]"};
-
-    s32 count = (s32)(sizeof(Modes) / sizeof(Modes[0]));
-    s32 btnW = 16;
+    if (!ai || !ai->studio) return;
     s32 mx = ai->mouseX;
     s32 my = ai->mouseY;
     if (mx < 0 && ai->tic)
     {
-        mx = ai->tic->ram->input.mouse.x * 2;
-        my = ai->tic->ram->input.mouse.y * 2;
+        mx = ai->tic->ram->input.mouse.x * 1920 / 256;
+        my = ai->tic->ram->input.mouse.y * 1080 / 144;
     }
     bool mclick = ai->tic ? (ai->tic->ram->input.mouse.left && !ai->prevMouseLeft) : false;
-
-    u32 colWhite     = getAiPaletteColor(ai, tic_color_white);
-    u32 colGrey      = getAiPaletteColor(ai, tic_color_grey);
-    u32 colLightGrey = getAiPaletteColor(ai, tic_color_light_grey);
-    u32 colBlack     = getAiPaletteColor(ai, tic_color_black);
-
-    // Toolbar background
-    hiresRect(ai, AI_OFFSET_LEFT, TOOLBAR_Y, AI_VIEW_WIDTH, TOOLBAR_H, colWhite);
-
-    for (s32 i = 0; i < count; i++)
-    {
-        s32 bx = AI_OFFSET_LEFT + i * btnW;
-        s32 by = TOOLBAR_Y;
-        bool over = (mx >= bx && mx < bx + btnW && my >= by && my < by + TOOLBAR_H);
-
-        if (over && ai->studio)
-        {
-            setCursor(ai->studio, tic_cursor_hand);
-            showTooltip(ai->studio, Tips[i]);
-            if (mclick)
-            {
-                setStudioMode(ai->studio, Modes[i]);
-                return;
-            }
-        }
-
-        bool isCurrentMode = (Modes[i] == TIC_AI_MODE);
-
-        if (isCurrentMode)
-        {
-            hiresBitIcon2x(ai, tic_icon_tab, bx, by, colGrey);
-            hiresBitIcon2x(ai, Icons[i], bx, by + 1, colBlack);
-            hiresBitIcon2x(ai, Icons[i], bx, by, colWhite);
-        }
-        else
-        {
-            hiresBitIcon2x(ai, Icons[i], bx, by, over ? colGrey : colLightGrey);
-        }
-    }
-
-    // Title on the right side of toolbar tabs
-    drawTextUTF8(ai, "OpenTIC AI 助手 [F6]", AI_OFFSET_LEFT + count * btnW + 8, TOOLBAR_Y + 1, colBlack, TOOLBAR_Y, TOOLBAR_Y + TOOLBAR_H);
+    studio_hires_draw_toolbar(ai->studio, TIC_AI_MODE, mx, my, mclick);
 }
 
 // -------------------------------------------------------------
-// Mouse Cursor Drawing (2x pixel art on hires screen)
+// Mouse Cursor Drawing (unified 1080p cursor)
 // -------------------------------------------------------------
 
 static void drawAiCursor(AiEditor* ai)
 {
-    if (!ai || !ai->tic || !ai->studio) return;
-    const StudioConfig* cfg = getConfig(ai->studio);
-    if (!cfg || !cfg->cart) return;
-
-    tic_mem* tic = ai->tic;
+    if (!ai || !ai->studio) return;
     s32 mx = ai->mouseX;
     s32 my = ai->mouseY;
-    if (mx < 0)
+    if (mx < 0 && ai->tic)
     {
-        mx = tic->ram->input.mouse.x * 2;
-        my = tic->ram->input.mouse.y * 2;
+        mx = ai->tic->ram->input.mouse.x * 1920 / 256;
+        my = ai->tic->ram->input.mouse.y * 1080 / 144;
     }
-
-    if (mx >= 0 && mx < AI_FULL_WIDTH && my >= 0 && my < AI_FULL_HEIGHT)
-    {
-        s32 sprite = CLAMP(tic->ram->vram.vars.cursor.sprite, 0, TIC_BANK_SPRITES - 1);
-        const tic_bank* bank = &cfg->cart->bank0;
-        tic_point hot = (tic_point[]){ {0, 0}, {3, 0}, {2, 3} }[CLAMP(sprite, 0, 2)];
-        const tic_palette* pal = &bank->palette.vbank0;
-        const tic_tile* tile = &bank->sprites.data[sprite];
-        s32 sx = mx - hot.x * 2;
-        s32 sy = my - hot.y * 2;
-
-        for (s32 y = 0; y < TIC_SPRITESIZE; y++)
-        {
-            for (s32 x = 0; x < TIC_SPRITESIZE; x++)
-            {
-                u8 c = tic_tool_peek4(tile->data, y * TIC_SPRITESIZE + x);
-                if (c)
-                {
-                    hiresRect(ai, sx + x * 2, sy + y * 2, 2, 2, tic_rgba(&pal->colors[c]));
-                }
-            }
-        }
-    }
+    studio_hires_draw_cursor(ai->studio, mx, my);
 }
 
 
@@ -1463,13 +1390,13 @@ static void tick(AiEditor* ai)
     InputLineInfo inputLinesInfo[8];
     s32 cursorColX = 0;
     s32 cursorLineIdx = 0;
-    s32 maxInputW = AI_VIEW_WIDTH - 32;
+    s32 maxInputW = CHAT_X_RIGHT - CHAT_X_LEFT - 64;
     s32 numInputLines = computeInputLayout(ai, inputLinesInfo, 5, &cursorColX, &cursorLineIdx, maxInputW);
     ai->inputLines = numInputLines;
-    ai->inputHeight = 22 + (numInputLines - 1) * AI_LINE_HEIGHT;
-    ai->inputY = (AI_OFFSET_TOP + AI_VIEW_HEIGHT) - ai->inputHeight - 2;
+    ai->inputHeight = 54 + (numInputLines - 1) * AI_LINE_HEIGHT;
+    ai->inputY = AI_FULL_HEIGHT - ai->inputHeight - 24;
 
-    s32 chatBottom = ai->inputY - 3;
+    s32 chatBottom = ai->inputY - 16;
     s32 chatViewH = chatBottom - CHAT_TOP;
 
     // Calculate total height of messages
@@ -1477,8 +1404,9 @@ static void tick(AiEditor* ai)
     for (i = 0; i < ai->messageCount; i++)
     {
         AiMessage* msg = &ai->messages[i];
-        s32 firstX = (msg->type == AI_MSG_USER) ? (CHAT_X_LEFT + 50) : (msg->type == AI_MSG_AGENT ? (CHAT_X_LEFT + 80) : CHAT_X_LEFT);
-        s32 wrapX = (msg->type == AI_MSG_USER || msg->type == AI_MSG_AGENT) ? (CHAT_X_LEFT + 16) : CHAT_X_LEFT;
+        s32 prefixW = (msg->type == AI_MSG_USER) ? measureTextWidth(ai, "[YOU]: ") : (msg->type == AI_MSG_AGENT ? measureTextWidth(ai, "[OpenTIC]: ") : 0);
+        s32 firstX = CHAT_X_LEFT + prefixW;
+        s32 wrapX = (msg->type == AI_MSG_USER || msg->type == AI_MSG_AGENT) ? (CHAT_X_LEFT + 24) : CHAT_X_LEFT;
         totalHeight += measureTextHeightEx(ai, msg->text, firstX, wrapX) + 6;
     }
     if (ai->isThinking)
@@ -1503,8 +1431,9 @@ static void tick(AiEditor* ai)
     for (i = 0; i < ai->messageCount; i++)
     {
         AiMessage* msg = &ai->messages[i];
-        s32 firstX = (msg->type == AI_MSG_USER) ? (CHAT_X_LEFT + 50) : (msg->type == AI_MSG_AGENT ? (CHAT_X_LEFT + 80) : CHAT_X_LEFT);
-        s32 wrapX = (msg->type == AI_MSG_USER || msg->type == AI_MSG_AGENT) ? (CHAT_X_LEFT + 16) : CHAT_X_LEFT;
+        s32 prefixW = (msg->type == AI_MSG_USER) ? measureTextWidth(ai, "[YOU]: ") : (msg->type == AI_MSG_AGENT ? measureTextWidth(ai, "[OpenTIC]: ") : 0);
+        s32 firstX = CHAT_X_LEFT + prefixW;
+        s32 wrapX = (msg->type == AI_MSG_USER || msg->type == AI_MSG_AGENT) ? (CHAT_X_LEFT + 24) : CHAT_X_LEFT;
         s32 msgH = measureTextHeightEx(ai, msg->text, firstX, wrapX);
 
         if (curY + msgH >= CHAT_TOP && curY < chatBottom)
@@ -1545,10 +1474,12 @@ static void tick(AiEditor* ai)
     }
 
     // Bottom auto-expanding input bar
-    hiresRect(ai, AI_OFFSET_LEFT, ai->inputY, AI_VIEW_WIDTH, ai->inputHeight, colDarkGrey);
-    hiresRect(ai, AI_OFFSET_LEFT, ai->inputY, AI_VIEW_WIDTH, 1, colGrey);
+    s32 barW = CHAT_X_RIGHT - CHAT_X_LEFT;
+    hiresRect(ai, CHAT_X_LEFT, ai->inputY, barW, ai->inputHeight, 0xff1e1e24);
+    hiresRect(ai, CHAT_X_LEFT, ai->inputY, barW, 1, colGrey);
+    hiresRectBorder(ai, CHAT_X_LEFT, ai->inputY, barW, ai->inputHeight, 0xff353748);
 
-    drawTextUTF8(ai, ">", AI_OFFSET_LEFT + 6, ai->inputY + 3, colYellow, ai->inputY, ai->inputY + ai->inputHeight);
+    drawTextUTF8(ai, ">", CHAT_X_LEFT + 16, ai->inputY + 10, colYellow, ai->inputY, ai->inputY + ai->inputHeight);
     if (ai->inputLen > 0 || ai->compositionLen > 0)
     {
         for (s32 li = 0; li < numInputLines; li++)
@@ -1562,24 +1493,24 @@ static void tick(AiEditor* ai)
                 if (lineLen >= AI_INPUT_MAX) lineLen = AI_INPUT_MAX - 1;
                 memcpy(lineBuf, &ai->input[lStart], lineLen);
                 lineBuf[lineLen] = '\0';
-                drawTextUTF8(ai, lineBuf, AI_OFFSET_LEFT + 22, ai->inputY + 3 + li * AI_LINE_HEIGHT, colWhite, ai->inputY, ai->inputY + ai->inputHeight);
+                drawTextUTF8(ai, lineBuf, CHAT_X_LEFT + 44, ai->inputY + 10 + li * AI_LINE_HEIGHT, colWhite, ai->inputY, ai->inputY + ai->inputHeight);
             }
         }
     }
     else
     {
-        drawTextUTF8(ai, "输入指令让 OpenTIC 修改代码或素材 (输入 / 唤起菜单)...", AI_OFFSET_LEFT + 22, ai->inputY + 3, colGrey, ai->inputY, ai->inputY + ai->inputHeight);
+        drawTextUTF8(ai, "输入指令让 OpenTIC 修改代码或素材 (输入 / 唤起菜单)...", CHAT_X_LEFT + 44, ai->inputY + 10, colGrey, ai->inputY, ai->inputY + ai->inputHeight);
     }
 
     // Multi-line cursor & IME composition
-    s32 curCursorX = AI_OFFSET_LEFT + 22 + cursorColX;
-    s32 curCursorY = ai->inputY + 3 + cursorLineIdx * AI_LINE_HEIGHT;
+    s32 curCursorX = CHAT_X_LEFT + 44 + cursorColX;
+    s32 curCursorY = ai->inputY + 10 + cursorLineIdx * AI_LINE_HEIGHT;
 
     // Draw active composition text (Pinyin candidate preview with underline)
     if (ai->compositionLen > 0)
     {
         s32 compW = drawTextUTF8(ai, ai->composition, curCursorX, curCursorY, colYellow, ai->inputY, ai->inputY + ai->inputHeight);
-        hiresRect(ai, curCursorX, curCursorY + 14, compW > 0 ? compW : 8, 1, colYellow);
+        hiresRect(ai, curCursorX, curCursorY + 28, compW > 0 ? compW : 14, 2, colYellow);
         curCursorX += compW;
     }
 
@@ -1588,7 +1519,7 @@ static void tick(AiEditor* ai)
     {
         if (curCursorX < CHAT_X_RIGHT)
         {
-            hiresRect(ai, curCursorX, curCursorY, 2, 14, colWhite);
+            hiresRect(ai, curCursorX, curCursorY, 3, 26, colWhite);
         }
     }
 
@@ -1645,10 +1576,10 @@ void ai_handle_text_editing(AiEditor* ai, const char* text, s32 start, s32 lengt
 void ai_get_input_rect(AiEditor* ai, s32* x, s32* y, s32* w, s32* h)
 {
     if (!ai) return;
-    if (x) *x = AI_OFFSET_LEFT + 22;
-    if (y) *y = ai->inputY > 0 ? ai->inputY : (AI_OFFSET_TOP + AI_VIEW_HEIGHT - 22);
-    if (w) *w = AI_VIEW_WIDTH - 30;
-    if (h) *h = ai->inputHeight > 0 ? ai->inputHeight : 22;
+    if (x) *x = CHAT_X_LEFT + 44;
+    if (y) *y = ai->inputY > 0 ? (ai->inputY + 10) : (AI_FULL_HEIGHT - 64);
+    if (w) *w = CHAT_X_RIGHT - CHAT_X_LEFT - 64;
+    if (h) *h = ai->inputHeight > 0 ? ai->inputHeight : 54;
 }
 
 static void event(AiEditor* ai, StudioEvent ev)
@@ -1699,8 +1630,8 @@ void initAi(AiEditor* ai, Studio* studio)
     ai->event = event;
 
     ai->inputLines = 1;
-    ai->inputHeight = 22;
-    ai->inputY = (AI_OFFSET_TOP + AI_VIEW_HEIGHT) - 22;
+    ai->inputHeight = 54;
+    ai->inputY = AI_FULL_HEIGHT - 54 - 24;
     ai->composition[0] = '\0';
     ai->compositionLen = 0;
     ai->compositionCursor = 0;

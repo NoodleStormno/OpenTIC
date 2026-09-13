@@ -255,6 +255,8 @@ struct Studio
     s32 samplerate;
     tic_font systemFont;
 
+    s32 hiresMouseX;
+    s32 hiresMouseY;
 };
 
 static void emptyDone(void* data) {}
@@ -1482,15 +1484,34 @@ const u32* studio_get_ai_hires_screen(Studio* studio, s32* w, s32* h)
 #endif
 }
 
+void studio_set_hires_mouse(Studio* studio, s32 x, s32 y)
+{
+    if (studio)
+    {
+        studio->hiresMouseX = x;
+        studio->hiresMouseY = y;
+#if defined(BUILD_EDITORS)
+        if (studio->ai)
+        {
+            studio->ai->mouseX = x;
+            studio->ai->mouseY = y;
+        }
+#endif
+    }
+}
+
+void studio_get_hires_mouse(Studio* studio, s32* x, s32* y)
+{
+    if (studio)
+    {
+        if (x) *x = studio->hiresMouseX;
+        if (y) *y = studio->hiresMouseY;
+    }
+}
+
 void studio_set_ai_mouse(Studio* studio, s32 x, s32 y)
 {
-#if defined(BUILD_EDITORS)
-    if (studio && studio->ai)
-    {
-        studio->ai->mouseX = x;
-        studio->ai->mouseY = y;
-    }
-#endif
+    studio_set_hires_mouse(studio, x, y);
 }
 
 bool studio_is_hires(Studio* studio)
@@ -1527,15 +1548,20 @@ const u32* studio_get_hires_screen(Studio* studio, s32* w, s32* h)
     }
 #endif
 
-    // For all other studio modes, blit 256x144 to 512x288
-    studio_hires_blit_2x(studio, studio->tic->product.screen);
+    // For retro editors (Sprite, Map, SFX, Music), blit 256x144 to 1920x1080
+    studio_hires_blit_to_1080p(studio, studio->tic->product.screen);
 
     // Overlay the high-resolution unified toolbar ONLY in editor modes!
     if (studio->mode >= TIC_CODE_MODE && studio->mode <= TIC_MUSIC_MODE)
     {
-        s32 mx = studio->tic->ram->input.mouse.x * 2;
-        s32 my = studio->tic->ram->input.mouse.y * 2;
-        bool click = studio->tic->ram->input.mouse.left;
+        s32 mx = 0, my = 0;
+        studio_get_hires_mouse(studio, &mx, &my);
+        if (mx < 0 && studio->tic)
+        {
+            mx = studio->tic->ram->input.mouse.x * 1920 / 256;
+            my = studio->tic->ram->input.mouse.y * 1080 / 144;
+        }
+        bool click = studio->tic ? studio->tic->ram->input.mouse.left : false;
         studio_hires_draw_toolbar(studio, studio->mode, mx, my, click);
     }
 

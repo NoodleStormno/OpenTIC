@@ -755,7 +755,7 @@ static void processMouse()
     else
     {
         input->mouse.x = input->mouse.y = -1;
-        studio_set_ai_mouse(platform.studio, -1, -1);
+        studio_set_hires_mouse(platform.studio, -1, -1);
 
         if(platform.mouse.focus)
         {
@@ -775,15 +775,13 @@ static void processMouse()
                     input->mouse.y = m.y;
                 }
 
-                if(getStudioMode(platform.studio) == TIC_AI_MODE && studio_is_ai_hires(platform.studio))
+                if(studio_is_hires(platform.studio))
                 {
-                    s32 aiW = 512, aiH = 288;
-                    studio_get_ai_hires_screen(platform.studio, &aiW, &aiH);
-                    s32 ax = (pt.x - rect.x) * aiW / rect.w;
-                    s32 ay = (pt.y - rect.y) * aiH / rect.h;
-                    if(ax < 0 || ay < 0 || ax >= aiW || ay >= aiH)
+                    s32 ax = (pt.x - rect.x) * 1920 / rect.w;
+                    s32 ay = (pt.y - rect.y) * 1080 / rect.h;
+                    if(ax < 0 || ay < 0 || ax >= 1920 || ay >= 1080)
                         ax = ay = -1;
-                    studio_set_ai_mouse(platform.studio, ax, ay);
+                    studio_set_hires_mouse(platform.studio, ax, ay);
                 }
             }
         }
@@ -1941,7 +1939,7 @@ static void gpuTick()
 
     if(studio_is_hires(platform.studio))
     {
-        s32 aiW = 512, aiH = 288;
+        s32 aiW = 1920, aiH = 1080;
         const u32* aiPixels = studio_get_hires_screen(platform.studio, &aiW, &aiH);
         if(aiPixels)
         {
@@ -2001,31 +1999,6 @@ static void gpuTick()
 
             for(s32 i = 0; i < COUNT_OF(Src); ++i)
                 renderCopy(platform.screen.renderer, platform.screen.aiTexture, Src[i], Dst[i]);
-            static int s_testDumpFrame = 0;
-            const char* dumpDir = getenv("OPENTIC_TEST_DUMP");
-            if (dumpDir && *dumpDir)
-            {
-                s_testDumpFrame++;
-                char path[512];
-                if (s_testDumpFrame == 60)
-                {
-                    snprintf(path, sizeof(path), "%s/screen_console.bmp", dumpDir);
-                    saveBMP(path, aiPixels, aiW, aiH);
-                    setStudioMode(platform.studio, TIC_CODE_MODE);
-                }
-                else if (s_testDumpFrame == 100)
-                {
-                    snprintf(path, sizeof(path), "%s/screen_code.bmp", dumpDir);
-                    saveBMP(path, aiPixels, aiW, aiH);
-                    setStudioMode(platform.studio, TIC_AI_MODE);
-                }
-                else if (s_testDumpFrame == 140)
-                {
-                    snprintf(path, sizeof(path), "%s/screen_ai.bmp", dumpDir);
-                    saveBMP(path, aiPixels, aiW, aiH);
-                    exit(0);
-                }
-            }
         }
 
         if(studio_is_ai_mode(platform.studio))
@@ -2037,10 +2010,10 @@ static void gpuTick()
             s32 imeX = 0, imeY = 0, imeW = 0, imeH = 0;
             studio_get_ime_rect(platform.studio, &imeX, &imeY, &imeW, &imeH);
             SDL_Rect imeRect;
-            imeRect.x = rect.x + (int)((float)imeX / 512.0f * rect.w);
-            imeRect.y = rect.y + (int)((float)imeY / 288.0f * rect.h);
-            imeRect.w = (int)((float)imeW / 512.0f * rect.w);
-            imeRect.h = (int)((float)imeH / 288.0f * rect.h);
+            imeRect.x = rect.x + (int)((float)imeX / 1920.0f * rect.w);
+            imeRect.y = rect.y + (int)((float)imeY / 1080.0f * rect.h);
+            imeRect.w = (int)((float)imeW / 1920.0f * rect.w);
+            imeRect.h = (int)((float)imeH / 1080.0f * rect.h);
             SDL_SetTextInputRect(&imeRect);
         }
     }

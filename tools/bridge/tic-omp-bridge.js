@@ -268,9 +268,9 @@ The global environment predefines the following functions. **Do not call any non
 5. **Variable Scope:** Always use \`local\` to declare local variables. This avoids polluting the global namespace and improves the execution speed of the Lua VM.
 
 
-### 7. Sokoban Example `.lua`
+### 7. Sokoban Example \`.lua\`
 
-```lua
+\`\`\`lua
 -- title:   Sokoban Box Pusher
 -- author:  Agent
 -- desc:    A minimal sokoban puzzle game
@@ -375,11 +375,11 @@ end
 -- <PALETTE>
 -- 000:1a1c2c5d275db13e53ef7d57ffcd75a7f07038b76425717929366f3b5dc941a6f673eff7f4f4f494b0c2566c86333c57
 -- </PALETTE>
-```
+\`\`\`
 
-### 8. Platformer Example `.lua`
+### 8. Platformer Example \`.lua\`
 
-```lua
+\`\`\`lua
 -- title:   Minimal Platformer
 -- author:  Agent
 -- desc:    AABB collision & Gravity test
@@ -480,7 +480,7 @@ end
 -- <PALETTE>
 -- 000:1a1c2c5d275db13e53ef7d57ffcd75a7f07038b76425717929366f3b5dc941a6f673eff7f4f4f494b0c2566c86333c57
 -- </PALETTE>
-```
+\`\`\`
 
 ### 9. Key Directives
 1. Strictly modify the target file directly using your edit/write tools.
