@@ -782,6 +782,20 @@ static void processMouse()
                     if(ax < 0 || ay < 0 || ax >= 1920 || ay >= 1080)
                         ax = ay = -1;
                     studio_set_hires_mouse(platform.studio, ax, ay);
+
+                    EditorMode mode = getStudioMode(platform.studio);
+                    if (mode >= TIC_SPRITE_MODE && mode <= TIC_MUSIC_MODE)
+                    {
+                        if (ay < 72 || ax < 64 || ax >= 1856 || ay >= 1080)
+                        {
+                            input->mouse.x = input->mouse.y = -1;
+                        }
+                        else
+                        {
+                            input->mouse.x = (ax - 64) / 7;
+                            input->mouse.y = (ay - 72) / 7;
+                        }
+                    }
                 }
             }
         }

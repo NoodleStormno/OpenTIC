@@ -10,9 +10,9 @@
 #define STUDIO_HIRES_VIEW_WIDTH 1920
 #define STUDIO_HIRES_VIEW_HEIGHT 1080
 #define STUDIO_HIRES_TOOLBAR_Y 0
-#define STUDIO_HIRES_TOOLBAR_H 48
-#define STUDIO_HIRES_FONT_SIZE 22.0f
-#define STUDIO_HIRES_LINE_HEIGHT 32
+#define STUDIO_HIRES_TOOLBAR_H 72
+#define STUDIO_HIRES_FONT_SIZE 32.0f
+#define STUDIO_HIRES_LINE_HEIGHT 44
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +32,7 @@ void studio_hires_rect(Studio* studio, s32 x, s32 y, s32 w, s32 h, u32 color);
 void studio_hires_rect_border(Studio* studio, s32 x, s32 y, s32 w, s32 h, u32 color);
 void studio_hires_icon2x(Studio* studio, s32 iconId, s32 x, s32 y, u32 color);
 void studio_hires_icon4x(Studio* studio, s32 iconId, s32 x, s32 y, u32 color);
+void studio_hires_icon6x(Studio* studio, s32 iconId, s32 x, s32 y, u32 color);
 
 s32  studio_hires_draw_text(Studio* studio, const char* text, s32 x, s32 y, u32 color, s32 clipTop, s32 clipBottom);
 s32  studio_hires_draw_char(Studio* studio, u32 codepoint, s32 x, s32 y, u32 color, s32 clipTop, s32 clipBottom);

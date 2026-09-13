@@ -1044,6 +1044,9 @@ static void drawPopup(Studio* studio)
 
 void drawToolbar(Studio* studio, tic_mem* tic, bool bg)
 {
+    if (studio_is_hires(studio))
+        return;
+
     if(bg)
         tic_api_rect(tic, 0, 0, TIC80_WIDTH, TOOLBAR_SIZE, tic_color_white);
 
