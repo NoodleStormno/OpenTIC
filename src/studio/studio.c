@@ -58,6 +58,7 @@
 #include "ext/md5.h"
 #include "config.h"
 #include "cart.h"
+#include "studio_hires.h"
 #include "screens/start.h"
 #include "screens/run.h"
 #include "screens/menu.h"
@@ -1447,6 +1448,42 @@ void studio_set_ai_mouse(Studio* studio, s32 x, s32 y)
         studio->ai->mouseY = y;
     }
 #endif
+}
+
+bool studio_is_hires(Studio* studio)
+{
+    if (!studio) return false;
+    // When game is running, return false so SDL renders native 240x136 canvas
+    if (studio->mode == TIC_RUN_MODE) return false;
+    return true;
+}
+
+const u32* studio_get_hires_screen(Studio* studio, s32* w, s32* h)
+{
+    if (!studio) return NULL;
+    if (w) *w = STUDIO_HIRES_WIDTH;
+    if (h) *h = STUDIO_HIRES_HEIGHT;
+
+#if defined(BUILD_EDITORS)
+    if (studio->mode == TIC_AI_MODE && studio->ai)
+    {
+        return studio_ai_get_screen(studio->ai, w, h);
+    }
+#endif
+
+    // For all other studio modes, blit 256x144 to 512x288
+    studio_hires_blit_2x(studio, studio->tic->product.screen);
+
+    // Overlay the high-resolution unified toolbar ONLY in editor modes!
+    if (studio->mode >= TIC_CODE_MODE && studio->mode <= TIC_MUSIC_MODE)
+    {
+        s32 mx = studio->tic->ram->input.mouse.x * 2;
+        s32 my = studio->tic->ram->input.mouse.y * 2;
+        bool click = studio->tic->ram->input.mouse.left;
+        studio_hires_draw_toolbar(studio, studio->mode, mx, my, click);
+    }
+
+    return studio_hires_get_screen(studio);
 }
 
 void setStudioMode(Studio* studio, EditorMode mode)
@@ -2896,6 +2933,7 @@ void studio_delete(Studio* studio)
 
         studio_mainmenu_free(studio->mainmenu);
         studio_menu_free(studio->menu);
+        studio_hires_free(studio);
     }
 
     tic_core_close(studio->tic);

@@ -17,13 +17,13 @@ BEGIN
 	BEGIN
 		BLOCK "040904E4"
 		BEGIN
-			VALUE "CompanyName", "Nesbox"
-			VALUE "FileDescription", "TIC-80 tiny computer"
+			VALUE "CompanyName", "OpenTIC Community"
+			VALUE "FileDescription", "OpenTIC Fantasy Console"
 			VALUE "FileVersion", "@VERSION_MAJOR@.@VERSION_MINOR@.@VERSION_REVISION@.0"
-			VALUE "InternalName", "tic80.exe"
-			VALUE "LegalCopyright", "https://tic80.com (C) 2017-@VERSION_YEAR@"
-			VALUE "OriginalFilename", "tic80.exe"
-			VALUE "ProductName", "TIC-80"
+			VALUE "InternalName", "OpenTIC.exe"
+			VALUE "LegalCopyright", "OpenTIC Community (C) 2026"
+			VALUE "OriginalFilename", "OpenTIC.exe"
+			VALUE "ProductName", "OpenTIC"
 			VALUE "ProductVersion", "@VERSION_MAJOR@.@VERSION_MINOR@.@VERSION_REVISION@.0"
 		END
 	END

@@ -267,219 +267,10 @@ The global environment predefines the following functions. **Do not call any non
 4. **OOP:** Use Metatables (\`__index\`) and Closures to implement lightweight object-oriented programming for managing game entities.
 5. **Variable Scope:** Always use \`local\` to declare local variables. This avoids polluting the global namespace and improves the execution speed of the Lua VM.
 
-### 7. Sokoban Example \`.lua\`
-
-\`\`\`lua
--- title:   Sokoban Box Pusher
--- author:  Agent
--- desc:    A minimal sokoban puzzle game
--- script:  lua
--- input:   gamepad
-
-local map_width, map_height = 8, 8
-local grid_size = 12
-local offset_x = (240 - map_width * grid_size) // 2
-local offset_y = (136 - map_height * grid_size) // 2
-
--- 0:Floor, 1:Wall, 2:Goal
-local level = {
-    1,1,1,1,1,1,1,1,
-    1,0,0,0,0,0,0,1,
-    1,0,2,0,0,0,0,1,
-    1,0,0,0,0,0,0,1,
-    1,0,0,0,0,0,0,1,
-    1,1,1,1,0,0,2,1,
-    1,1,1,1,1,1,1,1,
-    1,1,1,1,1,1,1,1
-}
-
-local player = {x = 3, y = 3}
-local boxes = { {x = 4, y = 3}, {x = 5, y = 5} }
-local steps = 0
-
-local function get_tile(x, y)
-    if x < 1 or x > map_width or y < 1 or y > map_height then return 1 end
-    return level[(y - 1) * map_width + x]
-end
-
-local function get_box(x, y)
-    for i, b in ipairs(boxes) do
-        if b.x == x and b.y == y then return b end
-    end
-    return nil
-end
-
-local function check_win()
-    for i, b in ipairs(boxes) do
-        if get_tile(b.x, b.y) ~= 2 then return false end
-    end
-    return true
-end
-
-local function move(dx, dy)
-    local nx, ny = player.x + dx, player.y + dy
-    if get_tile(nx, ny) == 1 then return end
-    
-    local b = get_box(nx, ny)
-    if b then
-        local bx, by = b.x + dx, b.y + dy
-        if get_tile(bx, by) == 1 or get_box(bx, by) then return end
-        b.x, b.y = bx, by
-    end
-    
-    player.x, player.y = nx, ny
-    steps = steps + 1
-end
-
-function TIC()
-    if btnp(0) then move(0, -1) end
-    if btnp(1) then move(0, 1) end
-    if btnp(2) then move(-1, 0) end
-    if btnp(3) then move(1, 0) end
-
-    cls(0)
-    
-    -- Draw Level
-    for y = 1, map_height do
-        for x = 1, map_width do
-            local tile = get_tile(x, y)
-            local px = offset_x + (x - 1) * grid_size
-            local py = offset_y + (y - 1) * grid_size
-            if tile == 1 then rect(px, py, grid_size, grid_size, 4) -- Wall
-            elseif tile == 2 then circ(px + 6, py + 6, 2, 6) end    -- Goal
-        end
-    end
-    
-    -- Draw Boxes
-    for i, b in ipairs(boxes) do
-        local px = offset_x + (b.x - 1) * grid_size
-        local py = offset_y + (b.y - 1) * grid_size
-        local color = get_tile(b.x, b.y) == 2 and 5 or 9
-        rect(px + 1, py + 1, grid_size - 2, grid_size - 2, color)
-    end
-    
-    -- Draw Player
-    circ(offset_x + (player.x - 1) * grid_size + 6, offset_y + (player.y - 1) * grid_size + 6, 4, 11)
-    
-    print("STEPS: " .. steps, 2, 2, 12)
-    if check_win() then print("YOU WIN!", 100, 10, 10) end
-end
-
--- <TILES>
--- 000:0000000000000000000000000000000000000000000000000000000000000000
--- </TILES>
--- <SPRITES>
--- 000:0000000000000000000000000000000000000000000000000000000000000000
--- </SPRITES>
--- <PALETTE>
--- 000:1a1c2c5d275db13e53ef7d57ffcd75a7f07038b76425717929366f3b5dc941a6f673eff7f4f4f494b0c2566c86333c57
--- </PALETTE>
-\`\`\`
-
-### 8. Platformer Example \`.lua\`
-
-\`\`\`lua
--- title:   Minimal Platformer
--- author:  Agent
--- desc:    AABB collision & Gravity test
--- script:  lua
--- input:   gamepad
-
-local p = {
-    x = 10, y = 10, w = 6, h = 8,
-    dx = 0, dy = 0,
-    speed = 1.5, jump = -3.5, grounded = false
-}
-
-local gravity = 0.2
-local friction = 0.8
-local max_fall = 4
-
-local rects = {
-    {x = 0,   y = 120, w = 240, h = 16},
-    {x = 60,  y = 90,  w = 40,  h = 8},
-    {x = 130, y = 60,  w = 40,  h = 8},
-    {x = 200, y = 30,  w = 40,  h = 8},
-}
-
-local function AABB(x1, y1, w1, h1, x2, y2, w2, h2)
-    return x1 < x2 + w2 and x1 + w1 > x2 and
-           y1 < y2 + h2 and y1 + h1 > y2
-end
-
-local function move_and_collide()
-    -- X axis
-    p.x = p.x + p.dx
-    for _, r in ipairs(rects) do
-        if AABB(p.x, p.y, p.w, p.h, r.x, r.y, r.w, r.h) then
-            if p.dx > 0 then p.x = r.x - p.w
-            elseif p.dx < 0 then p.x = r.x + r.w end
-            p.dx = 0
-        end
-    end
-
-    -- Y axis
-    p.y = p.y + p.dy
-    p.grounded = false
-    for _, r in ipairs(rects) do
-        if AABB(p.x, p.y, p.w, p.h, r.x, r.y, r.w, r.h) then
-            if p.dy > 0 then
-                p.y = r.y - p.h
-                p.grounded = true
-            elseif p.dy < 0 then
-                p.y = r.y + r.h
-            end
-            p.dy = 0
-        end
-    end
-end
-
-function TIC()
-    -- Input
-    if btn(2) then p.dx = -p.speed
-    elseif btn(3) then p.dx = p.speed
-    else p.dx = p.dx * friction end
-
-    if btnp(4) and p.grounded then
-        p.dy = p.jump
-    end
-
-    -- Physics
-    p.dy = p.dy + gravity
-    if p.dy > max_fall then p.dy = max_fall end
-    
-    move_and_collide()
-
-    -- Screen boundary
-    if p.x < 0 then p.x = 0 end
-    if p.x > 240 - p.w then p.x = 240 - p.w end
-    if p.y > 136 then
-        p.x, p.y, p.dy = 10, 10, 0
-    end
-
-    -- Render
-    cls(1)
-    
-    -- Level
-    for _, r in ipairs(rects) do
-        rect(r.x, r.y, r.w, r.h, 15)
-        rectb(r.x, r.y, r.w, r.h, 14)
-    end
-    
-    -- Player
-    rect(p.x, p.y, p.w, p.h, 6)
-    
-    print("Press Z to Jump", 2, 2, 12)
-end
-
--- <TILES>
--- </TILES>
--- <SPRITES>
--- </SPRITES>
--- <PALETTE>
--- 000:1a1c2c5d275db13e53ef7d57ffcd75a7f07038b76425717929366f3b5dc941a6f673eff7f4f4f494b0c2566c86333c57
--- </PALETTE>
-\`\`\`
+### 7. Key Directives
+1. Strictly modify the target file directly using your edit/write tools.
+2. Maintain standard Lua 5.3 syntax and OpenTIC APIs.
+3. Keep code compact, performant, and bug-free.
 `;
 
 function sendJson(res, statusCode, data) {
@@ -768,16 +559,45 @@ function handleChatRequest(data, res) {
     executeAgent(targetFile, prompt, beforeStats, beforeContent);
 }
 
+function prepareCartContext(beforeContent, userPrompt) {
+    if (!beforeContent || beforeContent.trim() === '') return '-- (Empty cartridge)';
+    
+    // Check if user request is asking about assets
+    const lower = (userPrompt || '').toLowerCase();
+    const wantsAssets = /(sprite|tile|map|palette|color|sfx|music|像素|精灵|图块|地图|画|颜色|素材|调色)/.test(lower);
+    
+    const assetIndex = beforeContent.search(/--\s*<(TILES|SPRITES|MAP|PALETTE|SFX|MUSIC|WAVES)>/i);
+    if (assetIndex === -1) {
+        return beforeContent;
+    }
+    
+    const codePart = beforeContent.substring(0, assetIndex).trimEnd();
+    const assetPart = beforeContent.substring(assetIndex);
+    
+    if (wantsAssets || assetPart.length < 1500) {
+        return beforeContent;
+    }
+    
+    const assetTags = [];
+    const tagMatches = assetPart.match(/--\s*<([A-Z]+)>/gi);
+    if (tagMatches) {
+        tagMatches.forEach(t => assetTags.push(t.trim()));
+    }
+    
+    return `${codePart}\n\n-- [Asset Section Notice: ${assetTags.join(', ')}]\n-- The cartridge contains trailing asset blocks at the bottom of the file.\n-- When editing code, preserve all existing asset blocks untouched.\n`;
+}
+
 function executeAgent(targetFile, userPrompt, beforeStats, beforeContent) {
     const fileName = path.basename(targetFile);
+    const cartContext = prepareCartContext(beforeContent, userPrompt);
     const fullPrompt = `${TIC80_SYSTEM_PROMPT}
 
 ### Target File:
 ${targetFile}
 
-### Current Cartridge Source Code (\`${fileName}\`):
+### Current Cartridge Code (\`${fileName}\`):
 \`\`\`lua
-${beforeContent || '-- (Empty cartridge)'}
+${cartContext}
 \`\`\`
 
 ### User Request:

@@ -65,7 +65,7 @@ if(BUILD_EDITORS)
 endif()
 
 if(NOT TIC80_TARGET)
-    set(TIC80_TARGET tic80)
+    set(TIC80_TARGET OpenTIC)
 endif()
 
 if(NOT BUILD_SDL)

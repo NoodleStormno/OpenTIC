@@ -1891,10 +1891,10 @@ static void gpuTick()
     SDL_Rect rect;
     calcTextureRect(&rect);
 
-    if(getStudioMode(platform.studio) == TIC_AI_MODE && studio_is_ai_hires(platform.studio))
+    if(studio_is_hires(platform.studio))
     {
         s32 aiW = 512, aiH = 288;
-        const u32* aiPixels = studio_get_ai_hires_screen(platform.studio, &aiW, &aiH);
+        const u32* aiPixels = studio_get_hires_screen(platform.studio, &aiW, &aiH);
         if(aiPixels)
         {
             if(!platform.screen.aiTexture.sdl

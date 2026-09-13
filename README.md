@@ -1,4 +1,4 @@
-﻿# OpenTIC
+# OpenTIC
 
 <p align="center">
   <strong>Next-Generation Fantasy Console with Integrated AI Assistant & Retro Toolchain</strong>
@@ -23,10 +23,15 @@ Whether you are sketching a quick prototype, generating pixel sprites, designing
 
 ## ✨ Key Features
 
+### 🎨 Unified Studio Visuals & Source Han Sans Typography
+* **Unified 512x288 High-Resolution Studio**: All studio interfaces (Code Editor, Sprite Editor, Map Editor, SFX Editor, Music Editor, Console, and AI Copilot) share a unified 512x288 buffer with crisp 2x scaling.
+* **Source Han Sans (思源黑体)**: Non-antialiased retro 1-bit rasterization of Source Han Sans across the top toolbar, mode indicators, and the AI Assistant for seamless Chinese and English rendering.
+* **Zero Window Jumping**: Running your game (`TIC_RUN_MODE`) executes at the native 240x136 fantasy console canvas while preserving the outer window dimensions and position without any resizing or jitter.
+
 ### 🤖 Native AI Game Copilot (Press `F6` or type `ai`)
 * **In-Console AI Assistant**: Press `F6` anytime in the studio or in-game to summon the AI assistant.
-* **Pixel-Crisp High-Res Typography**: Dual-layer 512x288 high-resolution overlay featuring 1-bit non-antialiased TrueType rendering (Source Han Sans / 思源黑体), ensuring crystal-clear Chinese and English text that honors the retro 16-color aesthetic.
 * **Full Code & Asset Manipulation**: The AI can directly edit Lua game code and manipulate cartridge asset blocks (`<TILES>`, `<SPRITES>`, `<MAP>`, `<PALETTE>`, `<SFX>`).
+* **Token & Speed Optimized Bridge**: Intelligent cartridge context separation prevents uploading massive raw asset hex chunks (`<MAP>`, `<TILES>`, etc.) unless asset edits are requested, cutting LLM token usage by up to 90% and speeding up response times dramatically.
 * **Instant Hot-Reload**: Generated code and assets are immediately injected into memory—test your changes instantly without restarting the console.
 * **Interactive Slash Commands (`/`)**:
   - `/key <provider> <key>`: Configure AI API keys (supports DeepSeek, OpenAI, Anthropic, Gemini, Groq, etc.) with instant persistence.
@@ -132,10 +137,10 @@ cd OpenTIC
 cmake -B build_msvc -G "Visual Studio 17 2022" -A x64 -DBUILD_PRO=ON
 
 # 3. Build Release target
-cmake --build build_msvc --config Release --target tic80
+cmake --build build_msvc --config Release --target OpenTIC
 
 # 4. Binaries are generated at:
-# build_msvc/bin/tic80.exe
+# build_msvc/bin/OpenTIC.exe
 ```
 
 ### Build Instructions (Linux / Ubuntu)

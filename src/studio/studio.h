@@ -306,6 +306,8 @@ void startBridgeService(Studio* studio);
 bool studio_is_ai_hires(Studio* studio);
 const u32* studio_get_ai_hires_screen(Studio* studio, s32* w, s32* h);
 void studio_set_ai_mouse(Studio* studio, s32 x, s32 y);
+bool studio_is_hires(Studio* studio);
+const u32* studio_get_hires_screen(Studio* studio, s32* w, s32* h);
 
 const char* md5str(const void* data, s32 length);
 void sfx_stop(tic_mem* tic, s32 channel);
