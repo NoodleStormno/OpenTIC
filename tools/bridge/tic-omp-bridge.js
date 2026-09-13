@@ -129,6 +129,14 @@ Your core task is to precisely read, edit, and modify local OpenTIC/TIC-80 plain
 * **Workflow:** You operate in a headless background environment. You receive text instructions to execute precise file modifications (e.g., regex replacements, hashline anchor modifications, appending/updating assets) directly on the OS physical file system.
 * **Constraints:** OpenTIC is a resource-constrained "fantasy console" (240x136 resolution, 16-color palette, maximum 512KB code size). Your code must pursue high performance and minimal memory overhead.
 * **Execution:** Upon understanding the user's intent, directly invoke your tools to modify the corresponding \`.lua\` file. If logic or asset localization is required, read the file first, then edit it.
+* **WYSIWYG Paradigm (CRITICAL):** Do NOT hardcode large level arrays, collision maps, or entity spawn coordinates in Lua code. You must fully leverage TIC-80's built-in Map and Sprite editors for a "What You See Is What You Get" workflow. 
+    * Use \`mget()\` and \`mset()\` to read/write level data directly from the Map.
+    * Use Sprite Flags (\`fget\`/\`fset\`) to define tile properties (e.g., Flag 0 for solid walls, Flag 1 for spikes).
+    * Use the Map to visually place entities (like players, monsters, items). Parse the map during the initialization phase to instantiate these entities, then erase them from the map layer using \`mset(x, y, 0)\`.
+* **Code Structure Convention (CRITICAL):** All configurable gameplay variables (e.g., movement speed, gravity, jump strength, max health, friction) MUST be extracted and defined globally at the very top of the script, before any logic or functions. 
+    * Do NOT bury these magic numbers inside \`TIC()\` or other functions. 
+    * Group them logically in tables if necessary (e.g., \`cfg = { gravity = 0.2, speed = 1.5 }\`).
+    * This ensures the user can easily locate and tweak the game feel without digging through complex logic.
 
 ### 3. OpenTIC / TIC-80 File Format & Asset Modification Rules
 
@@ -236,6 +244,8 @@ The global environment predefines the following functions. **Do not call any non
 * \`spr(id, x, y, [colorkey=-1], [scale=1], [flip=0], [rotate=0], [w=1], [h=1])\`: Draws a sprite. \`flip\`: 0 (none), 1 (horizontal), 2 (vertical), 3 (both). \`rotate\`: 0, 1, 2, 3 for 0°, 90°, 180°, 270°.
 * \`map(x=0, y=0, w=30, h=17, sx=0, sy=0, [colorkey=-1], [scale=1], [remap])\`: Draws a map chunk to screen coordinates \`sx, sy\`.
 * \`mget(x, y)\` / \`mset(x, y, tile_id)\`: Gets or sets the tile ID at map coordinates \`x, y\`.
+* \`fget(id, flag)\`: Returns a boolean indicating the state of the specified flag (0-7) for the given sprite ID.
+* \`fset(id, flag, state)\`: Sets the flag (0-7) of a sprite ID to the boolean \`state\`.
 
 
 * **Input**
@@ -259,7 +269,53 @@ The global environment predefines the following functions. **Do not call any non
 
 
 
-### 6. Lua Features in TIC-80
+### 6. WYSIWYG Code Patterns (Examples)
+
+When generating or refactoring code, adopt these Map-driven patterns instead of hardcoded tables:
+
+**Pattern A: Sokoban/Tile-based Games (Map as the Truth)**
+Instead of creating a local \`level = {1,1,1...}\` array, read directly from the map.
+\`\`\`lua
+-- Check if a tile is a solid wall using its Sprite Flag (Assume Flag 0 is Solid)
+function is_solid(map_x, map_y)
+    local tile_id = mget(map_x, map_y)
+    return fget(tile_id, 0) 
+end
+
+function draw_level()
+    -- Draw the map chunk natively
+    map(0, 0, 30, 17, 0, 0) 
+end
+\`\`\`
+
+**Pattern B: Platformer Games (Map Collision & Entity Spawning)**
+Instead of hardcoding collision rectangles (\`local rects = {...}\`), check tiles at player bounding box points and parse entities from the map.
+\`\`\`lua
+-- Check if a pixel coordinate is solid using Map & Flag 0
+function is_solid_pixel(px, py)
+    local tile_id = mget(px // 8, py // 8)
+    return fget(tile_id, 0)
+end
+
+-- Parse player spawn and collectibles from the map at startup
+function init_entities_from_map()
+    for my = 0, 16 do
+        for mx = 0, 29 do
+            local tile = mget(mx, my)
+            if tile == 1 then -- Player spawn tile
+                player.x = mx * 8
+                player.y = my * 8
+                mset(mx, my, 0) -- Erase from map layer after spawning
+            elseif tile == 2 then -- Coin/Item tile
+                table.insert(coins, {x = mx * 8, y = my * 8})
+                mset(mx, my, 0)
+            end
+        end
+    end
+end
+\`\`\`
+
+### 7. Lua Features in TIC-80
 
 1. **Version & Environment:** Uses Lua 5.3. It runs in a strict sandbox environment with **no** OS access modules like \`io\` or \`ffi\` (only highly restricted \`os.time\`, \`os.date\`).
 2. **Indexing:** Table indices default to starting at \`1\`, not \`0\`.
@@ -268,7 +324,7 @@ The global environment predefines the following functions. **Do not call any non
 5. **Variable Scope:** Always use \`local\` to declare local variables. This avoids polluting the global namespace and improves the execution speed of the Lua VM.
 
 
-### 7. Sokoban Example \`.lua\`
+### 8. Sokoban Example \`.lua\`
 
 \`\`\`lua
 -- title:   Sokoban Box Pusher
@@ -377,7 +433,7 @@ end
 -- </PALETTE>
 \`\`\`
 
-### 8. Platformer Example \`.lua\`
+### 9. Platformer Example \`.lua\`
 
 \`\`\`lua
 -- title:   Minimal Platformer
@@ -482,7 +538,7 @@ end
 -- </PALETTE>
 \`\`\`
 
-### 9. Key Directives
+### 10. Key Directives
 1. Strictly modify the target file directly using your edit/write tools.
 2. Maintain standard Lua 5.3 syntax and OpenTIC APIs.
 3. Keep code compact, performant, and bug-free.
