@@ -323,7 +323,7 @@ s32 studio_hires_draw_char_cell(Studio* studio, u32 codepoint, s32 x, s32 y, s32
     if (!s_hiresCtx.fontLoaded)
     {
         drawFallbackAsciiChar(studio, (char)(codepoint < 128 ? codepoint : '?'), x, y, color, clipTop, clipBottom);
-        return cellW > 0 ? cellW : 14;
+        return cellW > 0 ? cellW : 16;
     }
 
     int adv, lsb, x0, y0, x1, y1;
@@ -332,8 +332,8 @@ s32 studio_hires_draw_char_cell(Studio* studio, u32 codepoint, s32 x, s32 y, s32
 
     int gw = x1 - x0;
     int gh = y1 - y0;
-    int charAdvance = (int)(adv * s_hiresCtx.fontScale + 0.5f);
-    if (charAdvance <= 0) charAdvance = (codepoint >= 0x4E00) ? 22 : 12;
+    int charAdvance = (int)(adv * s_hiresCtx.fontScale + 0.5f) + 1;
+    if (charAdvance <= 1) charAdvance = (codepoint >= 0x4E00) ? 44 : 22;
 
     int xOffset = 0;
     if (cellW > 0 && codepoint != ' ')
@@ -360,13 +360,17 @@ s32 studio_hires_draw_char_cell(Studio* studio, u32 codepoint, s32 x, s32 y, s32
                     for (int c = 0; c < gw; c++)
                     {
                         u8 alpha = bmp[r * gw + c];
-                        // Crisp threshold 70 preserves all thin vertical strokes
-                        if (alpha >= 70)
+                        // Bolder threshold (45) with horizontal dilation (px and px+1) for rich, solid weight
+                        if (alpha >= 45)
                         {
                             int px = px0 + c;
                             if (px >= 0 && px < STUDIO_HIRES_WIDTH)
                             {
                                 studio_hires_pixel(studio, px, py, color);
+                            }
+                            if (px + 1 >= 0 && px + 1 < STUDIO_HIRES_WIDTH)
+                            {
+                                studio_hires_pixel(studio, px + 1, py, color);
                             }
                         }
                     }
@@ -396,13 +400,13 @@ s32 studio_hires_measure_text(Studio* studio, const char* text)
         {
             int adv, lsb;
             stbtt_GetCodepointHMetrics(&s_hiresCtx.fontInfo, cp, &adv, &lsb);
-            int charAdvance = (int)(adv * s_hiresCtx.fontScale + 0.5f);
-            if (charAdvance < 12) charAdvance = (cp >= 0x4E00) ? 32 : 16;
+            int charAdvance = (int)(adv * s_hiresCtx.fontScale + 0.5f) + 1;
+            if (charAdvance < 14) charAdvance = (cp >= 0x4E00) ? 44 : 22;
             width += charAdvance;
         }
         else
         {
-            width += (cp >= 0x4E00) ? 32 : 16;
+            width += (cp >= 0x4E00) ? 44 : 22;
         }
     }
     return width;
@@ -690,9 +694,9 @@ void studio_hires_draw_code(Studio* studio, struct Code* code)
     }
 
     // 3. Layout dimensions for 1080p
-    s32 statusH = 48;
+    s32 statusH = 52;
     s32 gutterX = 0;
-    s32 gutterW = 100;
+    s32 gutterW = 110;
     s32 gutterY = STUDIO_HIRES_TOOLBAR_H;
     s32 gutterH = STUDIO_HIRES_HEIGHT - STUDIO_HIRES_TOOLBAR_H - statusH;
 
@@ -735,13 +739,13 @@ void studio_hires_draw_code(Studio* studio, struct Code* code)
         // Draw Line Number in Gutter
         char numStr[16];
         snprintf(numStr, sizeof(numStr), "%4d", lineIdx + 1);
-        studio_hires_draw_text(studio, numStr, gutterX + 16, codeY + row * lineH + 4, isCurrentLine ? colYellow : colDarkGrey, gutterY, gutterY + gutterH);
+        studio_hires_draw_text(studio, numStr, gutterX + 16, codeY + row * lineH + 6, isCurrentLine ? colYellow : colDarkGrey, gutterY, gutterY + gutterH);
 
         // Check if bookmarked
         s32 lineStartOffset = (s32)(linePtr - src);
         if (lineStartOffset >= 0 && lineStartOffset < TIC_CODE_SIZE && code->state && code->state[lineStartOffset].bookmark)
         {
-            studio_hires_rect(studio, gutterX + 6, codeY + row * lineH + 8, 8, 24, colYellow);
+            studio_hires_rect(studio, gutterX + 6, codeY + row * lineH + 10, 8, 28, colYellow);
         }
 
         // Draw Code Text
@@ -755,15 +759,15 @@ void studio_hires_draw_code(Studio* studio, struct Code* code)
             s32 charOffset = (s32)(charStart - src);
 
             s32 tabCols = 1;
-            s32 cw = (cp >= 0x80) ? 36 : 18;
+            s32 cw = (cp >= 0x80) ? 44 : 22;
             if (cp == '\t')
             {
                 tabCols = 4 - (col % 4);
                 if (tabCols <= 0) tabCols = 4;
-                cw = tabCols * 18;
+                cw = tabCols * 22;
             }
 
-            s32 drawX = codeX + (col - code->scroll.x) * 18;
+            s32 drawX = codeX + (col - code->scroll.x) * 22;
             s32 drawY = codeY + row * lineH;
 
             // Selection Highlight
@@ -805,7 +809,7 @@ void studio_hires_draw_code(Studio* studio, struct Code* code)
         // Cursor at end of line check
         if (code->cursor.position == lineEnd)
         {
-            s32 drawX = codeX + (col - code->scroll.x) * 18;
+            s32 drawX = codeX + (col - code->scroll.x) * 22;
             s32 drawY = codeY + row * lineH;
             if ((code->tickCounter / 30) % 2 == 0)
             {
@@ -827,47 +831,47 @@ void studio_hires_draw_code(Studio* studio, struct Code* code)
 
     if (code->status.line[0])
     {
-        studio_hires_draw_text(studio, code->status.line, 24, statusY + 10, colWhite, statusY, statusY + statusH);
+        studio_hires_draw_text(studio, code->status.line, 24, statusY + 12, colWhite, statusY, statusY + statusH);
     }
-    studio_hires_draw_text(studio, "OpenTIC 幻想控制台 | Lua 5.3", STUDIO_HIRES_WIDTH / 2 - 160, statusY + 10, colLightGrey, statusY, statusY + statusH);
+    studio_hires_draw_text(studio, "OpenTIC 幻想控制台 | Lua 5.3", STUDIO_HIRES_WIDTH / 2 - 180, statusY + 12, colLightGrey, statusY, statusY + statusH);
     if (code->status.size[0])
     {
-        studio_hires_draw_text(studio, code->status.size, STUDIO_HIRES_WIDTH - 280, statusY + 10, colWhite, statusY, statusY + statusH);
+        studio_hires_draw_text(studio, code->status.size, STUDIO_HIRES_WIDTH - 300, statusY + 12, colWhite, statusY, statusY + statusH);
     }
 
     // 6. Modal Popups (Find, Replace, Goto)
     if (code->mode == TEXT_FIND_MODE)
     {
-        s32 pw = 720;
-        s32 ph = 68;
+        s32 pw = 760;
+        s32 ph = 76;
         s32 px = (STUDIO_HIRES_WIDTH - pw) / 2;
         s32 py = 96;
         studio_hires_rect(studio, px, py, pw, ph, colBlack);
         studio_hires_rect_border(studio, px, py, pw, ph, colYellow);
-        studio_hires_draw_text(studio, "查找: ", px + 20, py + 18, colYellow, py, py + ph);
-        studio_hires_draw_text(studio, code->popup.text, px + 100, py + 18, colWhite, py, py + ph);
+        studio_hires_draw_text(studio, "查找: ", px + 20, py + 20, colYellow, py, py + ph);
+        studio_hires_draw_text(studio, code->popup.text, px + 100, py + 20, colWhite, py, py + ph);
     }
     else if (code->mode == TEXT_REPLACE_MODE)
     {
-        s32 pw = 720;
-        s32 ph = 68;
+        s32 pw = 760;
+        s32 ph = 76;
         s32 px = (STUDIO_HIRES_WIDTH - pw) / 2;
         s32 py = 96;
         studio_hires_rect(studio, px, py, pw, ph, colBlack);
         studio_hires_rect_border(studio, px, py, pw, ph, colYellow);
-        studio_hires_draw_text(studio, "替换: ", px + 20, py + 18, colYellow, py, py + ph);
-        studio_hires_draw_text(studio, code->popup.text, px + 100, py + 18, colWhite, py, py + ph);
+        studio_hires_draw_text(studio, "替换: ", px + 20, py + 20, colYellow, py, py + ph);
+        studio_hires_draw_text(studio, code->popup.text, px + 100, py + 20, colWhite, py, py + ph);
     }
     else if (code->mode == TEXT_GOTO_MODE)
     {
-        s32 pw = 720;
-        s32 ph = 68;
+        s32 pw = 760;
+        s32 ph = 76;
         s32 px = (STUDIO_HIRES_WIDTH - pw) / 2;
         s32 py = 96;
         studio_hires_rect(studio, px, py, pw, ph, colBlack);
         studio_hires_rect_border(studio, px, py, pw, ph, colCyan);
-        studio_hires_draw_text(studio, "跳转行号: ", px + 20, py + 18, colCyan, py, py + ph);
-        studio_hires_draw_text(studio, code->popup.text, px + 160, py + 18, colWhite, py, py + ph);
+        studio_hires_draw_text(studio, "跳转行号: ", px + 20, py + 20, colCyan, py, py + ph);
+        studio_hires_draw_text(studio, code->popup.text, px + 180, py + 20, colWhite, py, py + ph);
     }
 
     // 7. High-Res Mouse Cursor
@@ -890,10 +894,10 @@ void studio_hires_draw_console(Studio* studio, struct Console* console)
     // Clear screen with Console background color
     studio_hires_cls(studio, colBG);
 
-    // 40 columns * 36px = 1440px, centered horizontally: (1920 - 1440) / 2 = 240
-    s32 startX = 240;
-    s32 startY = 88;
-    s32 colW = 36;
+    // 40 columns * 24px = 960px, natural terminal reading width
+    s32 colW = 24;
+    s32 startX = 160;
+    s32 startY = 96;
     s32 rowH = STUDIO_HIRES_LINE_HEIGHT;
 
     s32 cursorCol = (s32)console->cursor.pos.x;
@@ -909,7 +913,7 @@ void studio_hires_draw_console(Studio* studio, struct Console* console)
     }
 
     s32 visibleRows = (STUDIO_HIRES_HEIGHT - startY - 40) / rowH;
-    if (visibleRows > 22) visibleRows = 22;
+    if (visibleRows > 18) visibleRows = 18;
 
     for (s32 r = 0; r < visibleRows; r++)
     {

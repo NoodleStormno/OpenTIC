@@ -2013,6 +2013,38 @@ static void gpuTick()
 
             for(s32 i = 0; i < COUNT_OF(Src); ++i)
                 renderCopy(platform.screen.renderer, platform.screen.aiTexture, Src[i], Dst[i]);
+
+            static int s_testDumpFrame = 0;
+            const char* dumpDir = getenv("OPENTIC_TEST_DUMP");
+            if (dumpDir && *dumpDir)
+            {
+                s_testDumpFrame++;
+                char path[512];
+                if (s_testDumpFrame == 20)
+                {
+                    snprintf(path, sizeof(path), "%s/screen_console.bmp", dumpDir);
+                    saveBMP(path, aiPixels, aiW, aiH);
+                    setStudioMode(platform.studio, TIC_CODE_MODE);
+                }
+                else if (s_testDumpFrame == 40)
+                {
+                    snprintf(path, sizeof(path), "%s/screen_code.bmp", dumpDir);
+                    saveBMP(path, aiPixels, aiW, aiH);
+                    setStudioMode(platform.studio, TIC_SPRITE_MODE);
+                }
+                else if (s_testDumpFrame == 60)
+                {
+                    snprintf(path, sizeof(path), "%s/screen_sprite.bmp", dumpDir);
+                    saveBMP(path, aiPixels, aiW, aiH);
+                    setStudioMode(platform.studio, TIC_AI_MODE);
+                }
+                else if (s_testDumpFrame == 80)
+                {
+                    snprintf(path, sizeof(path), "%s/screen_ai.bmp", dumpDir);
+                    saveBMP(path, aiPixels, aiW, aiH);
+                    exit(0);
+                }
+            }
         }
 
         if(studio_is_ai_mode(platform.studio))
