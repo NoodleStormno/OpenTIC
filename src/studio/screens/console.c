@@ -129,13 +129,10 @@
     ALONE_KEY(macro)
 
 static const char* WelcomeText =
-    "TIC-80 is a fantasy computer for making, playing and sharing tiny games.\n\n"
-    "It has built-in tools for development: code, sprites, maps, sound editors and the command line, "
-    "which is enough to create a mini retro game.\n"
-    "In the end, you will get a cartridge file, which can be stored and played on the website.\n\n"
-    "Also, the game can be packed into a player that works on all popular platforms and distributed as you wish.\n"
-    "To make a retro-style game, the whole creation process takes place under some technical limitations: "
-    "240x136 pixels display, 16 color palette, 256 8x8 color sprites, 4 channel sound, etc.";
+    "OpenTIC is a fantasy console for making, playing and sharing retro games.\n\n"
+    "It features a built-in AI copilot (F6) and full retro toolchain: code, sprites, tiles, maps, SFX, and music editors.\n"
+    "Specifications:\n"
+    "240x136 16-color display, 256 8x8 tiles & sprites, 4-channel audio, Lua 5.3 scripting with instant hot-reload.";
 
 static const struct SpecRow {const char* section; const char* info;} SpecText1[] =
 {
@@ -154,7 +151,7 @@ static const struct HotkeysRowGeneral {const char* section; const char* info;} H
     {"CTRL+S",        "Save cart."},
     {"CTRL+X/C/V",    "Cut/copy/paste in the editors."},
     {"CTRL+Z/Y",      "Undo/redo changes in the editors."},
-    {"F6",            "Toggle CRT filter."},
+    {"F6",            "Open OpenTIC AI Assistant."},
     {"F7",            "Assign cover image while in game."},
     {"F8",            "Take a screenshot."},
     {"F9",            "Start/stop GIF video recording."},
@@ -730,6 +727,12 @@ static void onEditCommand(Console* console)
     commandDone(console);
 }
 
+static void onAiCommand(Console* console)
+{
+    gotoAi(console->studio);
+    commandDone(console);
+}
+
 static void loadCartSection(Console* console, const tic_cartridge* cart, const char* section)
 {
     tic_mem* tic = console->tic;
@@ -1075,7 +1078,7 @@ static void onLoadCommandConfirmed(Console* console)
                     printError(console, "\nproject loading error");
                     printFront(console, "\nThis version only supports binary .png or .tic cartridges.");
                     printLine(console);
-                    printFront(console, "\nTIC-80 ");
+                    printFront(console, "\nOpenTIC ");
                     consolePrint(console,"PRO",tic_color_light_blue);
                     printFront(console, " is needed for text files.");
                     printLine(console);
@@ -2914,6 +2917,14 @@ static const char HelpUsage[] = "help [<text>"
         NULL,                                                                           \
         NULL)                                                                           \
                                                                                         \
+    macro("ai",                                                                         \
+        NULL,                                                                           \
+        "Open AI assistant (Hotkey: F6).",                                              \
+        NULL,                                                                           \
+        onAiCommand,                                                                    \
+        NULL,                                                                           \
+        NULL)                                                                           \
+                                                                                        \
     macro("new",                                                                        \
         NULL,                                                                           \
         "Creates a new `Hello World` cartridge.",                                       \
@@ -4529,6 +4540,11 @@ void forceAutoSave(Console* console, const char* cart_name)
         printBack(console, "\ncart autosave error");
 
     commandDone(console);
+}
+
+CartSaveResult studio_save_cart_named(Console* console, const char* name)
+{
+    return saveCartName(console, name);
 }
 
 static int cmdcmp(const void* a, const void* b)

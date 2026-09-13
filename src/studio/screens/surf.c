@@ -88,7 +88,7 @@ static void drawTopToolbar(Surf* surf, s32 x, s32 y)
     tic_api_rect(tic, x, y + Height, TIC80_WIDTH, 1, tic_color_black);
 
     {
-        static const char Label[] = "TIC-80 SURF";
+        static const char Label[] = "OpenTIC SURF";
         s32 xl = x + MAIN_OFFSET;
         s32 yl = y + (Height - TIC_FONT_HEIGHT)/2;
         tic_api_print(tic, Label, xl, yl+1, tic_color_black, true, 1, false);

@@ -124,3 +124,4 @@ void freeConsole(Console* console)
 }
 
 void forceAutoSave(Console* console, const char* cart_name) {}
+CartSaveResult studio_save_cart_named(Console* console, const char* name) { return CART_SAVE_ERROR; }

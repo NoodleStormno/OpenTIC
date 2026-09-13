@@ -511,7 +511,7 @@ static const MenuItem MainMenu[] =
 #endif
     {"OPTIONS",     showOptionsMenu},
     {""},
-    {"QUIT TIC-80", onExitStudio},
+    {"QUIT OPENTIC", onExitStudio},
 };
 
 static void showMainMenu(void* data, s32 pos)

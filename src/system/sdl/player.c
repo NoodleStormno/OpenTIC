@@ -32,7 +32,7 @@
 #endif
 
 #define TIC80_WINDOW_SCALE 3
-#define TIC80_WINDOW_TITLE "TIC-80"
+#define TIC80_WINDOW_TITLE "OpenTIC"
 #define TIC80_DEFAULT_CART "cart.tic"
 #define TIC80_EXECUTABLE_NAME "player-sdl"
 

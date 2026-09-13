@@ -33,17 +33,17 @@
 
 #define TIC_VERSION DEF2STR(TIC_VERSION_MAJOR) "." DEF2STR(TIC_VERSION_MINOR) "." DEF2STR(TIC_VERSION_REVISION) TIC_VERSION_STATUS TIC_VERSION_BUILD TIC_VERSION_POST " (" TIC_VERSION_HASH ")"
 #define TIC_PACKAGE "com.nesbox.tic"
-#define TIC_NAME "TIC-80"
-#define TIC_NAME_FULL TIC_NAME " tiny computer"
-#define TIC_TITLE TIC_NAME_FULL " " TIC_VERSION
-#define TIC_HOST "tic80.com"
+#define TIC_NAME "OpenTIC"
+#define TIC_NAME_FULL TIC_NAME " fantasy console"
+#define TIC_TITLE TIC_NAME " " TIC_VERSION
+#define TIC_HOST "opentic.dev"
 #if defined(__TIC_WIN7__)
     #define TIC_WEBSITE_PROTOCOL "http://"
 #else
     #define TIC_WEBSITE_PROTOCOL "https://"
 #endif
 #define TIC_WEBSITE TIC_WEBSITE_PROTOCOL TIC_HOST
-#define TIC_COPYRIGHT TIC_WEBSITE " (C) 2017-" TIC_VERSION_YEAR
+#define TIC_COPYRIGHT "OpenTIC Community (C) 2026"
 
 #define TICNAME_MAX 256
 
@@ -168,6 +168,7 @@ void studio_keymapchanged(Studio *studio, tic_layout keyboardLayout);
 bool studio_alive(Studio* studio);
 void studio_exit(Studio* studio);
 void studio_delete(Studio* studio);
+void studio_text_input(Studio* studio, const char* text);
 const StudioConfig* studio_config(Studio* studio);
 
 Studio* studio_create(s32 argc, char **argv, s32 samplerate, tic80_pixel_color_format format, const char* appFolder, s32 maxscale, tic_layout keyboardLayout);

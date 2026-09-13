@@ -128,6 +128,7 @@ typedef enum
     TIC_WORLD_MODE,
     TIC_SFX_MODE,
     TIC_MUSIC_MODE,
+    TIC_AI_MODE,
     TIC_MENU_MODE,
     TIC_SURF_MODE,
 
@@ -158,6 +159,7 @@ enum
     tic_icon_map        = 90,
     tic_icon_sfx        = 91,
     tic_icon_music      = 92,
+    tic_icon_ai         = 127,
     tic_icon_rec        = 93,
     tic_icon_rec2       = 94,
     tic_icon_bookmark   = 95,
@@ -223,6 +225,7 @@ void studioConfigChanged(Studio* studio);
 void setStudioMode(Studio* studio, EditorMode mode);
 EditorMode getStudioMode(Studio* studio);
 void exitStudio(Studio* studio);
+void studio_text_input(Studio* studio, const char* text);
 
 void setStudioViMode(Studio* studio, ViMode mode);
 ViMode getStudioViMode(Studio* studio);
@@ -266,6 +269,7 @@ bool studio_is_cart_loaded(Studio* studio);
 
 void gotoMenu(Studio* studio);
 void gotoCode(Studio* studio);
+void gotoAi(Studio* studio);
 void gotoSurf(Studio* studio);
 
 void runGame(Studio* studio);
@@ -294,6 +298,14 @@ const char* studioExportMusic(Studio* studio, s32 track, s32 bank, const char* f
 const char* studioExportSfx(Studio* studio, s32 sfx, const char* filename);
 
 tic_mem* getMemory(Studio* studio);
+const char* studio_get_cart_name(Studio* studio);
+const char* studio_get_cart_path(Studio* studio);
+bool studio_sync_cart_to_disk(Studio* studio);
+void studio_update_code(Studio* studio);
+void startBridgeService(Studio* studio);
+bool studio_is_ai_hires(Studio* studio);
+const u32* studio_get_ai_hires_screen(Studio* studio, s32* w, s32* h);
+void studio_set_ai_mouse(Studio* studio, s32 x, s32 y);
 
 const char* md5str(const void* data, s32 length);
 void sfx_stop(tic_mem* tic, s32 channel);

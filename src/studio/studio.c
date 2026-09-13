@@ -35,6 +35,7 @@
 #include "editors/world.h"
 #include "editors/sfx.h"
 #include "editors/music.h"
+#include "editors/ai.h"
 #include "ext/history.h"
 #include "wave_writer.h"
 #include "ext/gif.h"
@@ -99,6 +100,7 @@ static const EditorMode Modes[] =
     TIC_MAP_MODE,
     TIC_SFX_MODE,
     TIC_MUSIC_MODE,
+    TIC_AI_MODE,
 };
 
 static const EditorMode BankModes[] =
@@ -215,6 +217,10 @@ struct Studio
     } video;
 
     Code*       code;
+    AiEditor*   ai;
+#if defined(_WIN32)
+    HANDLE      bridgeProcess;
+#endif
 
     struct
     {
@@ -1040,8 +1046,8 @@ void drawToolbar(Studio* studio, tic_mem* tic, bool bg)
 
     enum {Size = 7};
 
-    static const u8 Icons[] = {tic_icon_code, tic_icon_sprite, tic_icon_map, tic_icon_sfx, tic_icon_music};
-    static const char* Tips[] = {"CODE EDITOR [f1]", "SPRITE EDITOR [f2]", "MAP EDITOR [f3]", "SFX EDITOR [f4]", "MUSIC EDITOR [f5]",};
+    static const u8 Icons[] = {tic_icon_code, tic_icon_sprite, tic_icon_map, tic_icon_sfx, tic_icon_music, tic_icon_ai};
+    static const char* Tips[] = {"CODE EDITOR [f1]", "SPRITE EDITOR [f2]", "MAP EDITOR [f3]", "SFX EDITOR [f4]", "MUSIC EDITOR [f5]", "AI ASSISTANT [f6]"};
 
     s32 mode = -1;
 
@@ -1083,6 +1089,7 @@ void drawToolbar(Studio* studio, tic_mem* tic, bool bg)
         "MAP EDITOR",
         "SFX EDITOR",
         "MUSIC EDITOR",
+        "AI ASSISTANT",
     };
 
 #if defined (TIC80_PRO) && defined(BUILD_EDITORS)
@@ -1138,6 +1145,12 @@ void setStudioEvent(Studio* studio, StudioEvent event)
         {
             Music* music = studio->banks.music[studio->bank.index.music];
             music->event(music, event);
+        }
+        break;
+    case TIC_AI_MODE:
+        {
+            if (studio->ai && studio->ai->event)
+                studio->ai->event(studio->ai, event);
         }
         break;
     default: break;
@@ -1211,6 +1224,25 @@ void drawBitIcon(Studio* studio, s32 id, s32 x, s32 y, u8 color)
 {
     tic_mem* tic = studio->tic;
 
+    if (id == tic_icon_ai)
+    {
+        static const u8 ai_bits[8] = {
+            0b00111100,
+            0b01000010,
+            0b10100101,
+            0b10000001,
+            0b10111101,
+            0b01000010,
+            0b00111100,
+            0b00011000
+        };
+        for (s32 r = 0; r < 8; r++)
+            for (s32 c = 0; c < 8; c++)
+                if (ai_bits[r] & (1 << (7 - c)))
+                    tic_api_pix(tic, x + c, y + r, color, false);
+        return;
+    }
+
     const tic_tile* tile = &getConfig(studio)->cart->bank0.tiles.data[id];
 
     for(s32 i = 0, sx = x, ex = sx + TIC_SPRITESIZE; i != TIC_SPRITESIZE * TIC_SPRITESIZE; ++i, ++x)
@@ -1247,6 +1279,11 @@ void gotoCode(Studio* studio)
 {
     setStudioMode(studio, TIC_CODE_MODE);
 }
+
+void gotoAi(Studio* studio)
+{
+    setStudioMode(studio, TIC_AI_MODE);
+}
 #endif
 
 #if defined(BUILD_SURF)
@@ -1265,6 +1302,151 @@ void gotoSurf(Studio* studio)
 bool studio_is_cart_loaded(Studio* studio)
 {
     return strlen(studio->console->rom.name) > 0 || (studio->start && studio->start->embed);
+}
+
+#if defined(_WIN32)
+void startBridgeService(Studio* studio)
+{
+    if (!studio) return;
+
+    if (studio->bridgeProcess != NULL)
+    {
+        DWORD exitCode;
+        if (GetExitCodeProcess(studio->bridgeProcess, &exitCode) && exitCode == STILL_ACTIVE)
+        {
+            return;
+        }
+        CloseHandle(studio->bridgeProcess);
+        studio->bridgeProcess = NULL;
+    }
+
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+
+    char exeDir[MAX_PATH] = {0};
+    if (GetModuleFileNameA(NULL, exeDir, MAX_PATH))
+    {
+        char* lastSlash = strrchr(exeDir, '\\');
+        if (!lastSlash) lastSlash = strrchr(exeDir, '/');
+        if (lastSlash) *lastSlash = '\0';
+    }
+
+    char candidate1[MAX_PATH];
+    char candidate2[MAX_PATH];
+    char candidate3[MAX_PATH];
+    snprintf(candidate1, sizeof(candidate1), "%s\\tools\\bridge\\tic-omp-bridge.js", exeDir);
+    snprintf(candidate2, sizeof(candidate2), "%s\\..\\..\\tools\\bridge\\tic-omp-bridge.js", exeDir);
+    snprintf(candidate3, sizeof(candidate3), "%s\\..\\tools\\bridge\\tic-omp-bridge.js", exeDir);
+
+    const char* candidatePaths[] = {
+        candidate1,
+        candidate2,
+        candidate3,
+        "tools/bridge/tic-omp-bridge.js",
+        "../../tools/bridge/tic-omp-bridge.js",
+        "../tools/bridge/tic-omp-bridge.js",
+        "E:/OpenTIC/tools/bridge/tic-omp-bridge.js"
+    };
+    const char* bridgePath = NULL;
+    int i;
+    for (i = 0; i < (int)(sizeof(candidatePaths)/sizeof(candidatePaths[0])); i++)
+    {
+        FILE* f = fopen(candidatePaths[i], "rb");
+        if (f)
+        {
+            fclose(f);
+            bridgePath = candidatePaths[i];
+            break;
+        }
+    }
+
+    if (!bridgePath)
+    {
+        bridgePath = "E:/OpenTIC/tools/bridge/tic-omp-bridge.js";
+    }
+
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "cmd.exe /c node \"%s\"", bridgePath);
+    if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+    {
+        studio->bridgeProcess = pi.hProcess;
+        CloseHandle(pi.hThread);
+    }
+}
+#else
+void startBridgeService(Studio* studio)
+{
+}
+#endif
+
+void studio_text_input(Studio* studio, const char* text)
+{
+    if (!studio || !text) return;
+    if (studio->mode == TIC_AI_MODE && studio->ai)
+    {
+        ai_handle_text_input(studio->ai, text);
+    }
+}
+
+const char* studio_get_cart_name(Studio* studio)
+{
+    return (studio && studio->console) ? studio->console->rom.name : "";
+}
+
+const char* studio_get_cart_path(Studio* studio)
+{
+    if (!studio || !studio->console) return "";
+    if (studio->console->rom.path[0])
+        return studio->console->rom.path;
+    const char* name = studio->console->rom.name[0] ? studio->console->rom.name : "temp_game.lua";
+    return tic_fs_path(studio->fs, name);
+}
+
+bool studio_sync_cart_to_disk(Studio* studio)
+{
+    if (!studio || !studio->console) return false;
+    const char* name = studio->console->rom.name[0] ? studio->console->rom.name : "temp_game.lua";
+    return studio_save_cart_named(studio->console, name) == CART_SAVE_OK;
+}
+
+void studio_update_code(Studio* studio)
+{
+    if (studio && studio->code && studio->code->update)
+    {
+        studio->code->update(studio->code);
+    }
+}
+
+bool studio_is_ai_hires(Studio* studio)
+{
+#if defined(BUILD_EDITORS)
+    return (studio && studio->ai && studio_ai_has_hires(studio->ai));
+#else
+    return false;
+#endif
+}
+
+const u32* studio_get_ai_hires_screen(Studio* studio, s32* w, s32* h)
+{
+#if defined(BUILD_EDITORS)
+    return (studio && studio->ai) ? studio_ai_get_screen(studio->ai, w, h) : NULL;
+#else
+    return NULL;
+#endif
+}
+
+void studio_set_ai_mouse(Studio* studio, s32 x, s32 y)
+{
+#if defined(BUILD_EDITORS)
+    if (studio && studio->ai)
+    {
+        studio->ai->mouseX = x;
+        studio->ai->mouseY = y;
+    }
+#endif
 }
 
 void setStudioMode(Studio* studio, EditorMode mode)
@@ -1320,6 +1502,11 @@ void setStudioMode(Studio* studio, EditorMode mode)
                 studio->console->done(studio->console);
             break;
         case TIC_WORLD_MODE:    initWorldMap(studio); break;
+        case TIC_AI_MODE:
+#if defined(_WIN32)
+            startBridgeService(studio);
+#endif
+            break;
 #endif
 #if defined(BUILD_SURF)
         case TIC_SURF_MODE:     studio->surf->resume(studio->surf); break;
@@ -1528,6 +1715,7 @@ static void initModules(Studio* studio)
     resetBanks(studio);
 
     initCode(studio->code, studio);
+    if (studio->ai) initAi(studio->ai, studio);
 
     for(s32 i = 0; i < TIC_EDITOR_BANKS; i++)
     {
@@ -2026,6 +2214,7 @@ static void processShortcuts(Studio* studio)
             else if(keyWasPressedOnce(studio, tic_key_f3)) setStudioMode(studio, TIC_MAP_MODE);
             else if(keyWasPressedOnce(studio, tic_key_f4)) setStudioMode(studio, TIC_SFX_MODE);
             else if(keyWasPressedOnce(studio, tic_key_f5)) setStudioMode(studio, TIC_MUSIC_MODE);
+            else if(keyWasPressedOnce(studio, tic_key_f6)) setStudioMode(studio, TIC_AI_MODE);
         }
 #else
         else if(keyWasPressedOnce(studio, tic_key_escape))
@@ -2236,6 +2425,12 @@ static void renderStudio(Studio* studio)
         {
             Music* music = studio->banks.music[studio->bank.index.music];
             music->tick(music);
+        }
+        break;
+    case TIC_AI_MODE:
+        {
+            if (studio->ai && studio->ai->tick)
+                studio->ai->tick(studio->ai);
         }
         break;
 
@@ -2669,6 +2864,20 @@ void studio_delete(Studio* studio)
         }
 
         freeCode    (studio->code);
+        if (studio->ai)
+        {
+            freeAi(studio->ai);
+            free(studio->ai);
+            studio->ai = NULL;
+        }
+#if defined(_WIN32)
+        if (studio->bridgeProcess)
+        {
+            TerminateProcess(studio->bridgeProcess, 0);
+            CloseHandle(studio->bridgeProcess);
+            studio->bridgeProcess = NULL;
+        }
+#endif
         freeConsole (studio->console);
         freeWorld   (studio->world);
 
@@ -2918,6 +3127,7 @@ Studio* studio_create(s32 argc, char **argv, s32 samplerate, tic80_pixel_color_f
         }
 
         studio->code       = calloc(1, sizeof(Code));
+        studio->ai         = calloc(1, sizeof(AiEditor));
         studio->world      = calloc(1, sizeof(World));
 
         studio->anim.show = (Movie)MOVIE_DEF(STUDIO_ANIM_TIME, setPopupWait,

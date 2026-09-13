@@ -38,6 +38,7 @@ if(BUILD_EDITORS)
         ${TIC80LIB_DIR}/studio/editors/world.c
         ${TIC80LIB_DIR}/studio/editors/sfx.c
         ${TIC80LIB_DIR}/studio/editors/music.c
+        ${TIC80LIB_DIR}/studio/editors/ai.c
         ${TIC80LIB_DIR}/ext/history.c
         ${TIC80LIB_DIR}/ext/gif.c
     )

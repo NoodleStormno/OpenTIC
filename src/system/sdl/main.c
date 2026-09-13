@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include "studio/system.h"
+#include "studio/studio.h"
 #include "tools.h"
 
 #include "ext/fft.h"
@@ -110,6 +111,9 @@ static struct
     {
         Renderer renderer;
         Texture texture;
+        Texture aiTexture;
+        s32 aiTexW;
+        s32 aiTexH;
 
 #if defined(CRT_SHADER_SUPPORT)
         u32 shader;
@@ -346,19 +350,94 @@ static u8 getSpritePixel(const tic_tile* tiles, s32 x, s32 y)
 
 static void setWindowIcon()
 {
-    enum{ Size = 64, TileSize = 16, ColorKey = 14, Cols = TileSize / TIC_SPRITESIZE, Scale = Size/TileSize};
+    enum{ Size = 64 };
 
     u32* pixels = SDL_malloc(Size * Size * sizeof(u32));
     SCOPE(SDL_free(pixels))
     {
-        tic_blitpal pal = tic_tool_palette_blit(&studio_config(platform.studio)->cart->bank0.palette.vbank0, SCREEN_FORMAT);
+        float r = Size * 0.46f;
+        float cx = Size * 0.5f - 0.5f;
+        float cy = Size * 0.5f - 0.5f;
 
-        for(s32 j = 0, index = 0; j < Size; j++)
-            for(s32 i = 0; i < Size; i++, index++)
+        u32 col_yellow = 0xFF1BB4F4;
+        u32 col_dark   = 0xFF1C0C14;
+        u32 col_shine  = 0xFF7CE3FA;
+
+        for(s32 y = 0; y < Size; y++)
+        {
+            for(s32 x = 0; x < Size; x++)
             {
-                u8 color = getSpritePixel(studio_config(platform.studio)->cart->bank0.tiles.data, i/Scale, j/Scale);
-                pixels[index] = color == ColorKey ? 0 : pal.data[color];
+                float dx = x - cx;
+                float dy = y - cy;
+                float dist = sqrtf(dx * dx + dy * dy);
+                s32 idx = y * Size + x;
+
+                if(dist <= r)
+                {
+                    if(dist >= r - 2.5f)
+                    {
+                        pixels[idx] = col_dark;
+                    }
+                    else if(dx < -r * 0.2f && dy < -r * 0.2f && dist > r * 0.45f)
+                    {
+                        pixels[idx] = col_shine;
+                    }
+                    else
+                    {
+                        pixels[idx] = col_yellow;
+                    }
+                }
+                else
+                {
+                    pixels[idx] = 0;
+                }
             }
+        }
+
+        // Eyes
+        float eyeOx = Size * 0.22f;
+        float eyeOy = -Size * 0.12f;
+        float eyeRw = Size * 0.08f;
+        float eyeRh = Size * 0.14f;
+
+        for(s32 y = 0; y < Size; y++)
+        {
+            for(s32 x = 0; x < Size; x++)
+            {
+                float ldx = (x - (cx - eyeOx)) / eyeRw;
+                float ldy = (y - (cy + eyeOy)) / eyeRh;
+                float rdx = (x - (cx + eyeOx)) / eyeRw;
+                float rdy = (y - (cy + eyeOy)) / eyeRh;
+
+                if(ldx * ldx + ldy * ldy <= 1.0f || rdx * rdx + rdy * rdy <= 1.0f)
+                {
+                    pixels[y * Size + x] = col_dark;
+                }
+            }
+        }
+
+        // Smile mouth
+        float mouthR = Size * 0.28f;
+        float mouthCy = cy - Size * 0.02f;
+        float mouthThick = 2.5f;
+
+        for(s32 y = 0; y < Size; y++)
+        {
+            for(s32 x = 0; x < Size; x++)
+            {
+                float dx = x - cx;
+                float dy = y - mouthCy;
+                float dist = sqrtf(dx * dx + dy * dy);
+
+                if(dy > Size * 0.08f && dy < Size * 0.35f && fabsf(dx) < Size * 0.28f)
+                {
+                    if(fabsf(dist - mouthR) <= mouthThick * 0.55f)
+                    {
+                        pixels[y * Size + x] = col_dark;
+                    }
+                }
+            }
+        }
 
         SDL_Surface* surface = SDL_CreateRGBSurfaceFrom(pixels, Size, Size,
             sizeof(s32) * BITS_IN_BYTE, Size * sizeof(s32),
@@ -598,6 +677,12 @@ static void initGPU()
 static void destroyGPU()
 {
     destoryTexture(platform.screen.texture);
+    if(platform.screen.aiTexture.sdl
+#if defined(CRT_SHADER_SUPPORT)
+        || platform.screen.aiTexture.gpu
+#endif
+    )
+        destoryTexture(platform.screen.aiTexture);
 
 #if defined(TOUCH_INPUT_SUPPORT)
 
@@ -680,6 +765,7 @@ static void processMouse()
     else
     {
         input->mouse.x = input->mouse.y = -1;
+        studio_set_ai_mouse(platform.studio, -1, -1);
 
         if(platform.mouse.focus)
         {
@@ -697,6 +783,17 @@ static void processMouse()
                     SDL_ShowCursor(SDL_DISABLE);
                     input->mouse.x = m.x;
                     input->mouse.y = m.y;
+                }
+
+                if(getStudioMode(platform.studio) == TIC_AI_MODE && studio_is_ai_hires(platform.studio))
+                {
+                    s32 aiW = 512, aiH = 288;
+                    studio_get_ai_hires_screen(platform.studio, &aiW, &aiH);
+                    s32 ax = (pt.x - rect.x) * aiW / rect.w;
+                    s32 ay = (pt.y - rect.y) * aiH / rect.h;
+                    if(ax < 0 || ay < 0 || ax >= aiW || ay >= aiH)
+                        ax = ay = -1;
+                    studio_set_ai_mouse(platform.studio, ax, ay);
                 }
             }
         }
@@ -1251,6 +1348,7 @@ static void pollEvents()
         case SDL_TEXTINPUT:
             if(strlen(event.text.text) == 1)
                 platform.keyboard.text = event.text.text[0];
+            studio_text_input(platform.studio, event.text.text);
             break;
         case SDL_DROPFILE:
             studio_load(platform.studio, event.drop.file);
@@ -1789,60 +1887,128 @@ static void gpuTick()
     }
 
     renderClear(platform.screen.renderer);
-    updateTextureBytes(platform.screen.texture, tic->product.screen, TIC80_FULLWIDTH, TIC80_FULLHEIGHT);
 
     SDL_Rect rect;
     calcTextureRect(&rect);
 
-#if defined(CRT_SHADER_SUPPORT)
-
-    if(!studio_config(platform.studio)->soft && studio_config(platform.studio)->options.crt)
+    if(getStudioMode(platform.studio) == TIC_AI_MODE && studio_is_ai_hires(platform.studio))
     {
-        if(platform.screen.shader == 0)
-            loadCrtShader();
+        s32 aiW = 512, aiH = 288;
+        const u32* aiPixels = studio_get_ai_hires_screen(platform.studio, &aiW, &aiH);
+        if(aiPixels)
+        {
+            if(!platform.screen.aiTexture.sdl
+#if defined(CRT_SHADER_SUPPORT)
+                && !platform.screen.aiTexture.gpu
+#endif
+                || platform.screen.aiTexW != aiW || platform.screen.aiTexH != aiH)
+            {
+                if(platform.screen.aiTexture.sdl
+#if defined(CRT_SHADER_SUPPORT)
+                    || platform.screen.aiTexture.gpu
+#endif
+                )
+                {
+                    destoryTexture(platform.screen.aiTexture);
+                }
+#if defined(CRT_SHADER_SUPPORT)
+                if(!studio_config(platform.studio)->soft)
+                {
+                    platform.screen.aiTexture.gpu = GPU_CreateImage(aiW, aiH, GPU_FORMAT_RGBA);
+                    GPU_SetAnchor(platform.screen.aiTexture.gpu, 0, 0);
+                    GPU_SetImageFilter(platform.screen.aiTexture.gpu, GPU_FILTER_NEAREST);
+                }
+                else
+#endif
+                {
+                    platform.screen.aiTexture.sdl = SDL_CreateTexture(platform.screen.renderer.sdl,
+                        SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, aiW, aiH);
+                }
+                platform.screen.aiTexW = aiW;
+                platform.screen.aiTexH = aiH;
+            }
 
-        GPU_ActivateShaderProgram(platform.screen.shader, &platform.screen.block);
+            updateTextureBytes(platform.screen.aiTexture, aiPixels, aiW, aiH);
 
-        static const char* Uniforms[] = {"trg_x", "trg_y", "trg_w", "trg_h"};
+            s32 w, h;
+            SDL_GetWindowSize(platform.window, &w, &h);
 
-        for(s32 i = 0; i < COUNT_OF(Uniforms); ++i)
-            GPU_SetUniformf(GPU_GetUniformLocation(platform.screen.shader, Uniforms[i]), (&rect.x)[i]);
+            const SDL_Rect Src[] =
+            {
+                {0, 0, 16, 8},
+                {0, aiH - 8, 16, 8},
+                {0, 0, 16, aiH},
+                {0, 0, 16, aiH},
+                {0, 0, aiW, aiH},
+            };
 
-        GPU_BlitScale(platform.screen.texture.gpu, NULL, platform.screen.renderer.gpu, rect.x, rect.y,
-            (float)rect.w / TIC80_FULLWIDTH, (float)rect.h / TIC80_FULLHEIGHT);
-        GPU_DeactivateShaderProgram();
+            const SDL_Rect Dst[] =
+            {
+                {0, 0, w, rect.y},
+                {0, rect.y + rect.h, w, h - (rect.y + rect.h)},
+                {0, rect.y, rect.x, rect.h},
+                {rect.x + rect.w, rect.y, w - (rect.x + rect.w), rect.h},
+                {rect.x, rect.y, rect.w, rect.h},
+            };
+
+            for(s32 i = 0; i < COUNT_OF(Src); ++i)
+                renderCopy(platform.screen.renderer, platform.screen.aiTexture, Src[i], Dst[i]);
+        }
     }
     else
+    {
+        updateTextureBytes(platform.screen.texture, tic->product.screen, TIC80_FULLWIDTH, TIC80_FULLHEIGHT);
+
+#if defined(CRT_SHADER_SUPPORT)
+
+        if(!studio_config(platform.studio)->soft && studio_config(platform.studio)->options.crt)
+        {
+            if(platform.screen.shader == 0)
+                loadCrtShader();
+
+            GPU_ActivateShaderProgram(platform.screen.shader, &platform.screen.block);
+
+            static const char* Uniforms[] = {"trg_x", "trg_y", "trg_w", "trg_h"};
+
+            for(s32 i = 0; i < COUNT_OF(Uniforms); ++i)
+                GPU_SetUniformf(GPU_GetUniformLocation(platform.screen.shader, Uniforms[i]), (&rect.x)[i]);
+
+            GPU_BlitScale(platform.screen.texture.gpu, NULL, platform.screen.renderer.gpu, rect.x, rect.y,
+                (float)rect.w / TIC80_FULLWIDTH, (float)rect.h / TIC80_FULLHEIGHT);
+            GPU_DeactivateShaderProgram();
+        }
+        else
 
 #endif
 
-    {
-        s32 w, h;
-        SDL_GetWindowSize(platform.window, &w, &h);
-
-        s32 offset = tic->ram->input.mouse.x < TIC80_FULLHEIGHT / 2
-            ? TIC80_FULLWIDTH-TIC80_OFFSET_LEFT : 0;
-
-        const SDL_Rect Src[] =
         {
-            {offset, 0, TIC80_OFFSET_LEFT, TIC80_OFFSET_TOP},                                   // top border
-            {offset, TIC80_FULLHEIGHT-TIC80_OFFSET_TOP, TIC80_OFFSET_LEFT, TIC80_OFFSET_TOP},   // bottom border
-            {offset, 0, TIC80_OFFSET_LEFT, TIC80_FULLHEIGHT},                                   // left border
-            {offset, 0, TIC80_OFFSET_LEFT, TIC80_FULLHEIGHT},                                   // right border
-            {0, 0, TIC80_FULLWIDTH, TIC80_FULLHEIGHT},                                          // center
-        };
+            s32 w, h;
+            SDL_GetWindowSize(platform.window, &w, &h);
 
-        const SDL_Rect Dst[] =
-        {
-            {0, 0, w, rect.y},                                          // top border
-            {0, rect.y + rect.h, w, h - (rect.y + rect.h)},             // bottom border
-            {0, rect.y, rect.x, rect.h},                                // left border
-            {rect.x + rect.w, rect.y, w - (rect.x + rect.w), rect.h},   // right border
-            {rect.x, rect.y, rect.w, rect.h},                           // screen
-        };
+            s32 offset = tic->ram->input.mouse.x < TIC80_FULLHEIGHT / 2
+                ? TIC80_FULLWIDTH-TIC80_OFFSET_LEFT : 0;
 
-        for(s32 i = 0; i < COUNT_OF(Src); ++i)
-            renderCopy(platform.screen.renderer, platform.screen.texture, Src[i], Dst[i]);
+            const SDL_Rect Src[] =
+            {
+                {offset, 0, TIC80_OFFSET_LEFT, TIC80_OFFSET_TOP},                                   // top border
+                {offset, TIC80_FULLHEIGHT-TIC80_OFFSET_TOP, TIC80_OFFSET_LEFT, TIC80_OFFSET_TOP},   // bottom border
+                {offset, 0, TIC80_OFFSET_LEFT, TIC80_FULLHEIGHT},                                   // left border
+                {offset, 0, TIC80_OFFSET_LEFT, TIC80_FULLHEIGHT},                                   // right border
+                {0, 0, TIC80_FULLWIDTH, TIC80_FULLHEIGHT},                                          // center
+            };
+
+            const SDL_Rect Dst[] =
+            {
+                {0, 0, w, rect.y},                                          // top border
+                {0, rect.y + rect.h, w, h - (rect.y + rect.h)},             // bottom border
+                {0, rect.y, rect.x, rect.h},                                // left border
+                {rect.x + rect.w, rect.y, w - (rect.x + rect.w), rect.h},   // right border
+                {rect.x, rect.y, rect.w, rect.h},                           // screen
+            };
+
+            for(s32 i = 0; i < COUNT_OF(Src); ++i)
+                renderCopy(platform.screen.renderer, platform.screen.texture, Src[i], Dst[i]);
+        }
     }
 
 #if defined(TOUCH_INPUT_SUPPORT)

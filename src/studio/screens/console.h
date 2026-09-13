@@ -117,3 +117,4 @@ struct Console
 void initConsole(Console*, Studio* studio, struct tic_fs* fs, struct tic_net* net, struct Config* config, StartArgs args);
 void freeConsole(Console* console);
 void forceAutoSave(Console* console, const char* cart_name);
+CartSaveResult studio_save_cart_named(Console* console, const char* name);
