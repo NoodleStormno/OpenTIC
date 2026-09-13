@@ -198,3 +198,5 @@ build_*/
 *.bak
 bridge.log
 .tic_omp_keys.json
+dist/
+*.zip
