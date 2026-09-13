@@ -337,16 +337,6 @@ static void initSound()
     platform.audio.device = SDL_OpenAudioDevice(NULL, 0, &want, &platform.audio.spec, 0);
 }
 
-static const u8* getSpritePtr(const tic_tile* tiles, s32 x, s32 y)
-{
-    enum { SheetCols = (TIC_SPRITESHEET_SIZE / TIC_SPRITESIZE) };
-    return tiles[x / TIC_SPRITESIZE + y / TIC_SPRITESIZE * SheetCols].data;
-}
-
-static u8 getSpritePixel(const tic_tile* tiles, s32 x, s32 y)
-{
-    return tic_tool_peek4(getSpritePtr(tiles, x, y), (x % TIC_SPRITESIZE) + (y % TIC_SPRITESIZE) * TIC_SPRITESIZE);
-}
 
 static void setWindowIcon()
 {
@@ -1345,6 +1335,9 @@ static void pollEvents()
         case SDL_KEYMAPCHANGED:
             studio_keymapchanged(platform.studio, detect_keyboard_layout());
             break;
+        case SDL_TEXTEDITING:
+            studio_text_editing(platform.studio, event.edit.text, event.edit.start, event.edit.length);
+            break;
         case SDL_TEXTINPUT:
             if(strlen(event.text.text) == 1)
                 platform.keyboard.text = event.text.text[0];
@@ -1867,6 +1860,61 @@ void tic_sys_default_mapping(tic_mapping* mapping)
     }
 }
 
+static void saveBMP(const char* filename, const u32* pixels, s32 w, s32 h)
+{
+    FILE* f = fopen(filename, "wb");
+    if (!f) return;
+    u16 bfType = 0x4D42;
+    u32 rowBytes = (w * 3 + 3) & ~3;
+    u32 imgSize = rowBytes * h;
+    u32 bfSize = 54 + imgSize;
+    u32 bfReserved = 0;
+    u32 bfOffBits = 54;
+    u32 biSize = 40;
+    s32 biWidth = w;
+    s32 biHeight = h;
+    u16 biPlanes = 1;
+    u16 biBitCount = 24;
+    u32 biCompression = 0;
+    u32 biSizeImage = imgSize;
+    s32 biXPelsPerMeter = 2835;
+    s32 biYPelsPerMeter = 2835;
+    u32 biClrUsed = 0;
+    u32 biClrImportant = 0;
+
+    fwrite(&bfType, 2, 1, f);
+    fwrite(&bfSize, 4, 1, f);
+    fwrite(&bfReserved, 4, 1, f);
+    fwrite(&bfOffBits, 4, 1, f);
+    fwrite(&biSize, 4, 1, f);
+    fwrite(&biWidth, 4, 1, f);
+    fwrite(&biHeight, 4, 1, f);
+    fwrite(&biPlanes, 2, 1, f);
+    fwrite(&biBitCount, 2, 1, f);
+    fwrite(&biCompression, 4, 1, f);
+    fwrite(&biSizeImage, 4, 1, f);
+    fwrite(&biXPelsPerMeter, 4, 1, f);
+    fwrite(&biYPelsPerMeter, 4, 1, f);
+    fwrite(&biClrUsed, 4, 1, f);
+    fwrite(&biClrImportant, 4, 1, f);
+
+    u8* row = (u8*)malloc(rowBytes);
+    for (s32 y = h - 1; y >= 0; y--)
+    {
+        memset(row, 0, rowBytes);
+        for (s32 x = 0; x < w; x++)
+        {
+            u32 c = pixels[y * w + x];
+            row[x * 3 + 0] = (c >> 16) & 0xFF; // B
+            row[x * 3 + 1] = (c >> 8) & 0xFF;  // G
+            row[x * 3 + 2] = (c) & 0xFF;       // R
+        }
+        fwrite(row, 1, rowBytes, f);
+    }
+    free(row);
+    fclose(f);
+}
+
 static void gpuTick()
 {
     const tic_mem* tic = studio_mem(platform.studio);
@@ -1953,6 +2001,47 @@ static void gpuTick()
 
             for(s32 i = 0; i < COUNT_OF(Src); ++i)
                 renderCopy(platform.screen.renderer, platform.screen.aiTexture, Src[i], Dst[i]);
+            static int s_testDumpFrame = 0;
+            const char* dumpDir = getenv("OPENTIC_TEST_DUMP");
+            if (dumpDir && *dumpDir)
+            {
+                s_testDumpFrame++;
+                char path[512];
+                if (s_testDumpFrame == 60)
+                {
+                    snprintf(path, sizeof(path), "%s/screen_console.bmp", dumpDir);
+                    saveBMP(path, aiPixels, aiW, aiH);
+                    setStudioMode(platform.studio, TIC_CODE_MODE);
+                }
+                else if (s_testDumpFrame == 100)
+                {
+                    snprintf(path, sizeof(path), "%s/screen_code.bmp", dumpDir);
+                    saveBMP(path, aiPixels, aiW, aiH);
+                    setStudioMode(platform.studio, TIC_AI_MODE);
+                }
+                else if (s_testDumpFrame == 140)
+                {
+                    snprintf(path, sizeof(path), "%s/screen_ai.bmp", dumpDir);
+                    saveBMP(path, aiPixels, aiW, aiH);
+                    exit(0);
+                }
+            }
+        }
+
+        if(studio_is_ai_mode(platform.studio))
+        {
+            if(!SDL_IsTextInputActive())
+            {
+                SDL_StartTextInput();
+            }
+            s32 imeX = 0, imeY = 0, imeW = 0, imeH = 0;
+            studio_get_ime_rect(platform.studio, &imeX, &imeY, &imeW, &imeH);
+            SDL_Rect imeRect;
+            imeRect.x = rect.x + (int)((float)imeX / 512.0f * rect.w);
+            imeRect.y = rect.y + (int)((float)imeY / 288.0f * rect.h);
+            imeRect.w = (int)((float)imeW / 512.0f * rect.w);
+            imeRect.h = (int)((float)imeH / 288.0f * rect.h);
+            SDL_SetTextInputRect(&imeRect);
         }
     }
     else
@@ -2109,6 +2198,8 @@ static s32 start(s32 argc, char **argv, const char* folder)
 #ifdef __SWITCH__
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "1");
 #endif
+
+    SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
 
     int result = SDL_Init(SDL_INIT_VIDEO);
     if (result != 0)

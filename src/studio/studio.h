@@ -226,6 +226,9 @@ void setStudioMode(Studio* studio, EditorMode mode);
 EditorMode getStudioMode(Studio* studio);
 void exitStudio(Studio* studio);
 void studio_text_input(Studio* studio, const char* text);
+void studio_text_editing(Studio* studio, const char* text, s32 start, s32 length);
+void studio_get_ime_rect(Studio* studio, s32* x, s32* y, s32* w, s32* h);
+bool studio_is_ai_mode(Studio* studio);
 
 void setStudioViMode(Studio* studio, ViMode mode);
 ViMode getStudioViMode(Studio* studio);

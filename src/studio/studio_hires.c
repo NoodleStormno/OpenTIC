@@ -1,6 +1,14 @@
 // OpenTIC Studio High-Resolution (512x288) TrueType Engine Implementation
 #include "studio_hires.h"
 
+#if defined(BUILD_EDITORS)
+#include "editors/code.h"
+#endif
+
+#if defined(BUILD_EDITORS) || defined(BUILD_SURF)
+#include "screens/console.h"
+#endif
+
 #include "stb_truetype.h"
 
 #include <stdio.h>
@@ -269,12 +277,15 @@ static void drawFallbackAsciiChar(Studio* studio, char c, s32 x, s32 y, u32 colo
     }
 }
 
-s32 studio_hires_draw_char(Studio* studio, u32 codepoint, s32 x, s32 y, u32 color, s32 clipTop, s32 clipBottom)
+s32 studio_hires_draw_char_cell(Studio* studio, u32 codepoint, s32 x, s32 y, s32 cellW, u32 color, s32 clipTop, s32 clipBottom)
 {
+    if (codepoint == 0xFEFF || codepoint == 0x200B || codepoint == '\r' || codepoint == 0)
+        return 0;
+
     if (!s_hiresCtx.fontLoaded)
     {
         drawFallbackAsciiChar(studio, (char)(codepoint < 128 ? codepoint : '?'), x, y, color, clipTop, clipBottom);
-        return 12;
+        return cellW > 0 ? cellW : 8;
     }
 
     int adv, lsb, x0, y0, x1, y1;
@@ -284,7 +295,14 @@ s32 studio_hires_draw_char(Studio* studio, u32 codepoint, s32 x, s32 y, u32 colo
     int gw = x1 - x0;
     int gh = y1 - y0;
     int charAdvance = (int)(adv * s_hiresCtx.fontScale + 0.5f);
-    if (charAdvance < 7) charAdvance = (codepoint >= 0x4E00) ? 14 : 8;
+    if (charAdvance <= 0) charAdvance = (codepoint >= 0x4E00) ? 14 : 7;
+
+    int xOffset = 0;
+    if (cellW > 0 && codepoint != ' ')
+    {
+        xOffset = (cellW - charAdvance) / 2;
+        if (xOffset < 0) xOffset = 0;
+    }
 
     if (gw > 0 && gh > 0)
     {
@@ -293,7 +311,7 @@ s32 studio_hires_draw_char(Studio* studio, u32 codepoint, s32 x, s32 y, u32 colo
         {
             stbtt_MakeCodepointBitmap(&s_hiresCtx.fontInfo, bmp, gw, gh, gw, s_hiresCtx.fontScale, s_hiresCtx.fontScale, codepoint);
             int originY = y + (int)s_hiresCtx.fontAscent;
-            int px0 = x + x0;
+            int px0 = x + xOffset + x0;
             int py0 = originY + y0;
 
             for (int r = 0; r < gh; r++)
@@ -303,7 +321,9 @@ s32 studio_hires_draw_char(Studio* studio, u32 codepoint, s32 x, s32 y, u32 colo
                 {
                     for (int c = 0; c < gw; c++)
                     {
-                        if (bmp[r * gw + c] >= 128)
+                        u8 alpha = bmp[r * gw + c];
+                        // Crisp threshold 70 preserves all thin vertical strokes
+                        if (alpha >= 70)
                         {
                             int px = px0 + c;
                             if (px >= 0 && px < STUDIO_HIRES_WIDTH)
@@ -318,6 +338,11 @@ s32 studio_hires_draw_char(Studio* studio, u32 codepoint, s32 x, s32 y, u32 colo
         }
     }
     return charAdvance;
+}
+
+s32 studio_hires_draw_char(Studio* studio, u32 codepoint, s32 x, s32 y, u32 color, s32 clipTop, s32 clipBottom)
+{
+    return studio_hires_draw_char_cell(studio, codepoint, x, y, 0, color, clipTop, clipBottom);
 }
 
 s32 studio_hires_measure_text(Studio* studio, const char* text)
@@ -530,3 +555,320 @@ void studio_hires_update_system_font(tic_mem* tic, tic_font* systemFont)
     }
     tic->ram->font = *systemFont;
 }
+
+#if defined(BUILD_EDITORS)
+void studio_hires_draw_code(Studio* studio, struct Code* code)
+{
+    if (!studio || !code) return;
+
+    u32* screen = studio_hires_get_screen(studio);
+    if (!screen) return;
+
+    const StudioConfig* cfg = getConfig(studio);
+    if (!cfg) return;
+
+    const u8* syntaxColors = (const u8*)&cfg->theme.code;
+    u32 colBG        = studio_hires_get_color(studio, cfg->theme.code.BG);
+    u32 colCursor    = studio_hires_get_color(studio, cfg->theme.code.cursor);
+    u32 colSelect    = studio_hires_get_color(studio, cfg->theme.code.select);
+    u32 colDarkGrey  = studio_hires_get_color(studio, tic_color_dark_grey);
+    u32 colGrey      = studio_hires_get_color(studio, tic_color_grey);
+    u32 colLightGrey = studio_hires_get_color(studio, tic_color_light_grey);
+    u32 colWhite     = studio_hires_get_color(studio, tic_color_white);
+    u32 colYellow    = studio_hires_get_color(studio, tic_color_yellow);
+    u32 colBlack     = studio_hires_get_color(studio, tic_color_black);
+    u32 colCyan      = studio_hires_get_color(studio, tic_color_cyan);
+
+    // 1. Fill entire screen border and workspace
+    studio_hires_cls(studio, colBlack);
+    studio_hires_rect(studio, STUDIO_HIRES_OFFSET_LEFT, STUDIO_HIRES_OFFSET_TOP, STUDIO_HIRES_VIEW_WIDTH, STUDIO_HIRES_VIEW_HEIGHT, colBG);
+
+    // 2. Draw Top Toolbar (with mode selector and title)
+    tic_mem* tic = getMemory(studio);
+    s32 mx = tic ? tic->ram->input.mouse.x * 2 : 0;
+    s32 my = tic ? tic->ram->input.mouse.y * 2 : 0;
+    bool click = tic ? (bool)tic->ram->input.mouse.left : false;
+    studio_hires_draw_toolbar(studio, TIC_CODE_MODE, mx, my, click);
+
+    // Right-side code editor action buttons on toolbar
+    static const u8 CodeIcons[] = {tic_icon_hand, tic_icon_find, tic_icon_goto, tic_icon_bookmark, tic_icon_outline, tic_icon_run};
+    static const char* CodeTips[] = {"DRAG [right mouse]", "FIND [ctrl+f]", "GOTO LINE [ctrl+g]", "BOOKMARKS [ctrl+b]", "OUTLINE [ctrl+o]", "RUN CART [ctrl+r]"};
+    enum { CodeBtnCount = COUNT_OF(CodeIcons) };
+    s32 btnW = 16;
+    s32 rightStart = STUDIO_HIRES_OFFSET_LEFT + STUDIO_HIRES_VIEW_WIDTH - CodeBtnCount * btnW - 4;
+    for (s32 bi = 0; bi < CodeBtnCount; bi++)
+    {
+        s32 bx = rightStart + bi * btnW;
+        s32 by = STUDIO_HIRES_TOOLBAR_Y;
+        bool over = (mx >= bx && mx < bx + btnW && my >= by && my < by + STUDIO_HIRES_TOOLBAR_H);
+        if (over)
+        {
+            setCursor(studio, tic_cursor_hand);
+            showTooltip(studio, CodeTips[bi]);
+        }
+        studio_hires_icon2x(studio, CodeIcons[bi], bx, by, over ? colWhite : colLightGrey);
+    }
+
+    // 3. Layout dimensions
+    s32 gutterX = STUDIO_HIRES_OFFSET_LEFT;
+    s32 gutterW = 38;
+    s32 gutterY = 24;
+    s32 gutterH = 248;
+
+    s32 codeX = gutterX + gutterW + 6;
+    s32 codeY = 24;
+    s32 codeW = (STUDIO_HIRES_OFFSET_LEFT + STUDIO_HIRES_VIEW_WIDTH) - codeX;
+    s32 codeH = 248;
+    s32 lineH = 14;
+    s32 visibleRows = codeH / lineH;
+
+    // Draw Gutter Background & Separator Line
+    studio_hires_rect(studio, gutterX, gutterY, gutterW, gutterH, colBlack);
+    studio_hires_rect(studio, gutterX + gutterW - 1, gutterY, 1, gutterH, colDarkGrey);
+
+    // 4. Find all line starts in code->src
+    const char* src = code->src ? code->src : "";
+
+    const char* currentLinePtr = src;
+    s32 currentLineIdx = 0;
+    while (*currentLinePtr && currentLineIdx < code->scroll.y)
+    {
+        if (*currentLinePtr == '\n') currentLineIdx++;
+        currentLinePtr++;
+    }
+
+    const char* selStart = MIN(code->cursor.selection, code->cursor.position);
+    const char* selEnd   = MAX(code->cursor.selection, code->cursor.position);
+    bool hasSelection = (code->cursor.selection != NULL && selStart < selEnd);
+
+    // Render visible lines
+    const char* linePtr = currentLinePtr;
+    for (s32 row = 0; row < visibleRows && *linePtr; row++)
+    {
+        s32 lineIdx = code->scroll.y + row;
+        const char* nextLinePtr = strchr(linePtr, '\n');
+        const char* lineEnd = nextLinePtr ? nextLinePtr : (linePtr + strlen(linePtr));
+
+        bool isCurrentLine = (code->cursor.position >= linePtr && code->cursor.position <= lineEnd);
+
+        // Draw Line Number in Gutter
+        char numStr[16];
+        snprintf(numStr, sizeof(numStr), "%3d", lineIdx + 1);
+        studio_hires_draw_text(studio, numStr, gutterX + 4, codeY + row * lineH, isCurrentLine ? colYellow : colDarkGrey, gutterY, gutterY + gutterH);
+
+        // Check if bookmarked
+        s32 lineStartOffset = (s32)(linePtr - src);
+        if (lineStartOffset >= 0 && lineStartOffset < TIC_CODE_SIZE && code->state && code->state[lineStartOffset].bookmark)
+        {
+            studio_hires_rect(studio, gutterX + 1, codeY + row * lineH + 3, 3, 8, colYellow);
+        }
+
+        // Draw Code Text
+        const char* cpPtr = linePtr;
+        s32 col = 0;
+        while (cpPtr < lineEnd)
+        {
+            const char* charStart = cpPtr;
+            u32 cp = utf8_decode_codepoint(&cpPtr);
+            if (cp == 0xFEFF || cp == 0x200B || cp == '\r' || cp == 0) continue;
+            s32 charOffset = (s32)(charStart - src);
+
+            s32 tabCols = 1;
+            s32 cw = (cp >= 0x80) ? 16 : 8;
+            if (cp == '\t')
+            {
+                tabCols = 4 - (col % 4);
+                if (tabCols <= 0) tabCols = 4;
+                cw = tabCols * 8;
+            }
+
+            s32 drawX = codeX + (col - code->scroll.x) * 8;
+            s32 drawY = codeY + row * lineH;
+
+            // Selection Highlight
+            if (hasSelection && charStart >= selStart && charStart < selEnd)
+            {
+                if (drawX + cw > codeX && drawX < codeX + codeW)
+                {
+                    studio_hires_rect(studio, drawX, drawY, cw, lineH, colSelect);
+                }
+            }
+
+            // Draw Character
+            if (drawX + cw > codeX && drawX < codeX + codeW)
+            {
+                if (cp != ' ' && cp != '\t')
+                {
+                    u8 syn = (charOffset < TIC_CODE_SIZE && code->state) ? code->state[charOffset].syntax : 0;
+                    u8 palIdx = syntaxColors[syn & 7];
+                    u32 color = studio_hires_get_color(studio, palIdx);
+                    studio_hires_draw_char_cell(studio, cp, drawX, drawY, cw, color, codeY, codeY + codeH);
+                }
+            }
+
+            // Cursor check
+            if (charStart == code->cursor.position)
+            {
+                if ((code->tickCounter / 30) % 2 == 0)
+                {
+                    if (drawX >= codeX && drawX < codeX + codeW)
+                    {
+                        studio_hires_rect(studio, drawX, drawY, 2, lineH, colCursor);
+                    }
+                }
+            }
+
+            col += (cp == '\t') ? tabCols : (cp >= 0x80 ? 2 : 1);
+        }
+
+        // Cursor at end of line check
+        if (code->cursor.position == lineEnd)
+        {
+            s32 drawX = codeX + (col - code->scroll.x) * 8;
+            s32 drawY = codeY + row * lineH;
+            if ((code->tickCounter / 30) % 2 == 0)
+            {
+                if (drawX >= codeX && drawX < codeX + codeW)
+                {
+                    studio_hires_rect(studio, drawX, drawY, 2, lineH, colCursor);
+                }
+            }
+        }
+
+        if (!nextLinePtr) break;
+        linePtr = nextLinePtr + 1;
+    }
+
+    // 5. Bottom Status Bar (y = 272..288)
+    s32 statusY = 272;
+    studio_hires_rect(studio, STUDIO_HIRES_OFFSET_LEFT, statusY, STUDIO_HIRES_VIEW_WIDTH, 16, colDarkGrey);
+    studio_hires_rect(studio, STUDIO_HIRES_OFFSET_LEFT, statusY, STUDIO_HIRES_VIEW_WIDTH, 1, colGrey);
+
+    if (code->status.line[0])
+    {
+        studio_hires_draw_text(studio, code->status.line, STUDIO_HIRES_OFFSET_LEFT + 6, statusY + 1, colWhite, statusY, statusY + 16);
+    }
+    studio_hires_draw_text(studio, "OpenTIC | Lua 5.3", STUDIO_HIRES_OFFSET_LEFT + 200, statusY + 1, colLightGrey, statusY, statusY + 16);
+    if (code->status.size[0])
+    {
+        studio_hires_draw_text(studio, code->status.size, STUDIO_HIRES_OFFSET_LEFT + STUDIO_HIRES_VIEW_WIDTH - 120, statusY + 1, colWhite, statusY, statusY + 16);
+    }
+
+    // 6. Modal Popups (Find, Replace, Goto)
+    if (code->mode == TEXT_FIND_MODE)
+    {
+        s32 px = STUDIO_HIRES_OFFSET_LEFT + 100;
+        s32 py = 28;
+        s32 pw = 280;
+        s32 ph = 24;
+        studio_hires_rect(studio, px, py, pw, ph, colBlack);
+        studio_hires_rect_border(studio, px, py, pw, ph, colYellow);
+        studio_hires_draw_text(studio, "查找: ", px + 8, py + 3, colYellow, py, py + ph);
+        studio_hires_draw_text(studio, code->popup.text, px + 52, py + 3, colWhite, py, py + ph);
+    }
+    else if (code->mode == TEXT_REPLACE_MODE)
+    {
+        s32 px = STUDIO_HIRES_OFFSET_LEFT + 100;
+        s32 py = 28;
+        s32 pw = 280;
+        s32 ph = 24;
+        studio_hires_rect(studio, px, py, pw, ph, colBlack);
+        studio_hires_rect_border(studio, px, py, pw, ph, colYellow);
+        studio_hires_draw_text(studio, "替换: ", px + 8, py + 3, colYellow, py, py + ph);
+        studio_hires_draw_text(studio, code->popup.text, px + 52, py + 3, colWhite, py, py + ph);
+    }
+    else if (code->mode == TEXT_GOTO_MODE)
+    {
+        s32 px = STUDIO_HIRES_OFFSET_LEFT + 120;
+        s32 py = 28;
+        s32 pw = 240;
+        s32 ph = 24;
+        studio_hires_rect(studio, px, py, pw, ph, colBlack);
+        studio_hires_rect_border(studio, px, py, pw, ph, colCyan);
+        studio_hires_draw_text(studio, "跳转行号: ", px + 8, py + 3, colCyan, py, py + ph);
+        studio_hires_draw_text(studio, code->popup.text, px + 80, py + 3, colWhite, py, py + ph);
+    }
+
+    // 7. High-Res Mouse Cursor
+    studio_hires_draw_cursor(studio, mx, my);
+}
+#endif
+
+#if defined(BUILD_EDITORS) || defined(BUILD_SURF)
+void studio_hires_draw_console(Studio* studio, struct Console* console)
+{
+    if (!studio || !console || !console->text || !console->color) return;
+
+    u32* screen = studio_hires_get_screen(studio);
+    if (!screen) return;
+
+    u32 colBG = studio_hires_get_color(studio, tic_color_black);
+    u32 colCursor = studio_hires_get_color(studio, tic_color_red);
+    u32 colWhite = studio_hires_get_color(studio, tic_color_white);
+
+    // Clear screen with Console background color
+    studio_hires_cls(studio, colBG);
+
+    s32 startX = 24;
+    s32 startY = 24;
+    s32 colW = 8;
+    s32 rowH = 14;
+
+    s32 cursorCol = (s32)console->cursor.pos.x;
+    s32 cursorRow = (s32)console->cursor.pos.y - console->scroll.pos;
+
+    const char* selStart = console->select.start;
+    const char* selEnd = console->select.end;
+    if (selStart && selEnd && selStart > selEnd)
+    {
+        const char* tmp = selStart;
+        selStart = selEnd;
+        selEnd = tmp;
+    }
+
+    for (s32 r = 0; r < 17; r++)
+    {
+        s32 rowIdx = console->scroll.pos + r;
+        if (rowIdx < 0) continue;
+
+        for (s32 c = 0; c < STUDIO_TEXT_BUFFER_WIDTH; c++)
+        {
+            s32 bufIdx = rowIdx * STUDIO_TEXT_BUFFER_WIDTH + c;
+            char sym = console->text[bufIdx];
+            u8 palIdx = console->color[bufIdx];
+
+            s32 px = startX + c * colW;
+            s32 py = startY + r * rowH;
+
+            const char* ptr = &console->text[bufIdx];
+            bool isSelected = (selStart && selEnd && ptr >= selStart && ptr <= selEnd);
+
+            if (isSelected)
+            {
+                studio_hires_rect(studio, px, py, colW, rowH, colWhite);
+            }
+
+            if (sym && sym != ' ')
+            {
+                u32 charCol = studio_hires_get_color(studio, isSelected ? tic_color_black : palIdx);
+                studio_hires_draw_char_cell(studio, (u32)(u8)sym, px, py, colW, charCol, startY, startY + 17 * rowH);
+            }
+
+            // Draw cursor
+            if (c == cursorCol && r == cursorRow)
+            {
+                if ((console->tickCounter / 30) % 2 == 0)
+                {
+                    studio_hires_rect(studio, px, py + rowH - 2, colW, 2, colCursor);
+                }
+            }
+        }
+    }
+
+    // High-Res Cursor
+    tic_mem* tic = getMemory(studio);
+    s32 mx = tic ? tic->ram->input.mouse.x * 2 : 0;
+    s32 my = tic ? tic->ram->input.mouse.y * 2 : 0;
+    studio_hires_draw_cursor(studio, mx, my);
+}
+#endif

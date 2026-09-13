@@ -39,6 +39,11 @@ s32  studio_hires_measure_text(Studio* studio, const char* text);
 void studio_hires_draw_toolbar(Studio* studio, EditorMode currentMode, s32 mouseX, s32 mouseY, bool mouseClick);
 void studio_hires_draw_cursor(Studio* studio, s32 mouseX, s32 mouseY);
 
+struct Code;
+struct Console;
+void studio_hires_draw_code(Studio* studio, struct Code* code);
+void studio_hires_draw_console(Studio* studio, struct Console* console);
+
 void studio_hires_blit_2x(Studio* studio, const u32* src256x144);
 void studio_hires_update_system_font(tic_mem* tic, tic_font* systemFont);
 

@@ -67,6 +67,16 @@ struct AiEditor
 
     u32* hiresScreen;
 
+    // Input box dynamic multi-line & wrapping
+    s32 inputLines;
+    s32 inputHeight;
+    s32 inputY;
+
+    // IME composition support
+    char composition[256];
+    s32 compositionCursor;
+    s32 compositionLen;
+
     void (*tick)(AiEditor*);
     void (*event)(AiEditor*, StudioEvent);
 };
@@ -74,5 +84,7 @@ struct AiEditor
 void initAi(AiEditor* ai, Studio* studio);
 void freeAi(AiEditor* ai);
 void ai_handle_text_input(AiEditor* ai, const char* text);
+void ai_handle_text_editing(AiEditor* ai, const char* text, s32 start, s32 length);
+void ai_get_input_rect(AiEditor* ai, s32* x, s32* y, s32* w, s32* h);
 bool studio_ai_has_hires(AiEditor* ai);
 const u32* studio_ai_get_screen(AiEditor* ai, s32* w, s32* h);

@@ -144,3 +144,4 @@ void codeGetPos(Code*, s32* x, s32* y);
 void codeSetPos(Code*, s32 x, s32 y);
 
 void trimWhitespace(Code*);
+void code_insert_text(Code* code, const char* text);

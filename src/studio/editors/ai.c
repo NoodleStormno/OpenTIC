@@ -468,6 +468,106 @@ static inline s32 measureTextHeight(AiEditor* ai, const char* str, s32 startX)
     return measureTextHeightEx(ai, str, startX, startX);
 }
 
+typedef struct
+{
+    s32 start;
+    s32 end;
+} InputLineInfo;
+
+static s32 computeInputLayout(AiEditor* ai, InputLineInfo* lines, s32 maxLines, s32* outCursorX, s32* outCursorY, s32 maxLineW)
+{
+    stbtt_fontinfo* info = (stbtt_fontinfo*)ai->fontInfo;
+    s32 lineCount = 0;
+    s32 curLineStart = 0;
+    s32 curW = 0;
+    s32 cursorX = 0;
+    s32 cursorLine = 0;
+    bool cursorFound = false;
+
+    const char* str = ai->input;
+    const char* p = str;
+    s32 byteIdx = 0;
+
+    while (*p && lineCount < maxLines)
+    {
+        if (byteIdx == ai->cursor)
+        {
+            cursorX = curW;
+            cursorLine = lineCount;
+            cursorFound = true;
+        }
+
+        if (*p == '\n')
+        {
+            if (lineCount < maxLines)
+            {
+                lines[lineCount].start = curLineStart;
+                lines[lineCount].end = byteIdx;
+                lineCount++;
+            }
+            p++;
+            byteIdx++;
+            curLineStart = byteIdx;
+            curW = 0;
+            continue;
+        }
+
+        const char* charStart = p;
+        u32 cp = utf8_decode(&p);
+        s32 charBytes = (s32)(p - charStart);
+        s32 charW = 8;
+        if (ai->fontLoaded && info)
+        {
+            int glyph = stbtt_FindGlyphIndex(info, (int)cp);
+            if (glyph != 0)
+            {
+                int adv, lsb;
+                stbtt_GetGlyphHMetrics(info, glyph, &adv, &lsb);
+                charW = (s32)(adv * ai->fontScale + 0.5f);
+                if (charW <= 0) charW = (cp < 128) ? 8 : 14;
+                if (cp < 128 && charW < 7 && cp != ' ') charW = 7;
+                if (cp >= 128 && charW < 12) charW = 12;
+            }
+        }
+
+        if (curW + charW > maxLineW && curW > 0)
+        {
+            if (lineCount < maxLines - 1)
+            {
+                lines[lineCount].start = curLineStart;
+                lines[lineCount].end = byteIdx;
+                lineCount++;
+                curLineStart = byteIdx;
+                curW = 0;
+            }
+        }
+
+        curW += charW;
+        byteIdx += charBytes;
+    }
+
+    if (!cursorFound)
+    {
+        cursorX = curW;
+        cursorLine = lineCount;
+    }
+
+    if (lineCount < maxLines)
+    {
+        lines[lineCount].start = curLineStart;
+        lines[lineCount].end = byteIdx;
+        lineCount++;
+    }
+
+    if (lineCount == 0) lineCount = 1;
+    if (cursorLine >= lineCount) cursorLine = lineCount - 1;
+
+    if (outCursorX) *outCursorX = cursorX;
+    if (outCursorY) *outCursorY = cursorLine;
+    return lineCount;
+}
+
+
 // -------------------------------------------------------------
 // Slash Commands Popup
 // -------------------------------------------------------------
@@ -551,7 +651,8 @@ static void drawSlashPopup(AiEditor* ai)
     s32 headerH = 16;
     s32 menuH = headerH + count * itemH + 4;
     s32 menuX = AI_OFFSET_LEFT + 10;
-    s32 menuY = INPUT_Y - menuH - 2;
+    s32 inputTop = ai->inputY > 0 ? ai->inputY : INPUT_Y;
+    s32 menuY = inputTop - menuH - 2;
 
     u32 colBlack     = getAiPaletteColor(ai, tic_color_black);
     u32 colBlue      = getAiPaletteColor(ai, tic_color_blue);
@@ -1074,8 +1175,11 @@ static void tick(AiEditor* ai)
     bool lclick = ldown && !ai->prevMouseLeft;
     bool rclick = rdown && !ai->prevMouseRight;
 
+    s32 curInY = ai->inputY > 0 ? ai->inputY : INPUT_Y;
+    s32 curInH = ai->inputHeight > 0 ? ai->inputHeight : INPUT_H;
+
     // Hover cursor over input bar
-    if (mx >= AI_OFFSET_LEFT && mx < AI_OFFSET_LEFT + AI_VIEW_WIDTH && my >= INPUT_Y && my < INPUT_Y + INPUT_H)
+    if (mx >= AI_OFFSET_LEFT && mx < AI_OFFSET_LEFT + AI_VIEW_WIDTH && my >= curInY && my < curInY + curInH)
     {
         if (studio) setCursor(studio, tic_cursor_ibeam);
     }
@@ -1100,13 +1204,13 @@ static void tick(AiEditor* ai)
     }
 
     // Left-click on input bar to place cursor
-    if (lclick && mx >= AI_OFFSET_LEFT && mx < AI_OFFSET_LEFT + AI_VIEW_WIDTH && my >= INPUT_Y && my < INPUT_Y + INPUT_H)
+    if (lclick && mx >= AI_OFFSET_LEFT && mx < AI_OFFSET_LEFT + AI_VIEW_WIDTH && my >= curInY && my < curInY + curInH)
     {
         ai->cursor = ai->inputLen;
     }
 
     // Right-click on input bar to paste
-    if (rclick && mx >= AI_OFFSET_LEFT && mx < AI_OFFSET_LEFT + AI_VIEW_WIDTH && my >= INPUT_Y && my < INPUT_Y + INPUT_H)
+    if (rclick && mx >= AI_OFFSET_LEFT && mx < AI_OFFSET_LEFT + AI_VIEW_WIDTH && my >= curInY && my < curInY + curInH)
     {
         pasteFromClipboard(ai);
     }
@@ -1177,7 +1281,23 @@ static void tick(AiEditor* ai)
         {
             if (aiEnterWasPressed(tic))
             {
-                sendUserPrompt(ai);
+                bool isShiftOrCtrl = tic_api_key(tic, tic_key_shift) || tic_api_key(tic, tic_key_ctrl);
+                if (isShiftOrCtrl)
+                {
+                    if (ai->inputLen < AI_INPUT_MAX - 2)
+                    {
+                        memmove(&ai->input[ai->cursor + 1], &ai->input[ai->cursor], ai->inputLen - ai->cursor + 1);
+                        ai->input[ai->cursor] = '\n';
+                        ai->cursor++;
+                        ai->inputLen++;
+                        ai->input[ai->inputLen] = '\0';
+                        updateSlashPopup(ai);
+                    }
+                }
+                else
+                {
+                    sendUserPrompt(ai);
+                }
             }
             else if (aiKeyWasPressed(tic, tic_key_backspace))
             {
@@ -1339,6 +1459,19 @@ static void tick(AiEditor* ai)
     // Draw top toolbar in high-res
     drawToolbarHires(ai);
 
+    // Compute multi-line input layout and auto-expanding input height
+    InputLineInfo inputLinesInfo[8];
+    s32 cursorColX = 0;
+    s32 cursorLineIdx = 0;
+    s32 maxInputW = AI_VIEW_WIDTH - 32;
+    s32 numInputLines = computeInputLayout(ai, inputLinesInfo, 5, &cursorColX, &cursorLineIdx, maxInputW);
+    ai->inputLines = numInputLines;
+    ai->inputHeight = 22 + (numInputLines - 1) * AI_LINE_HEIGHT;
+    ai->inputY = (AI_OFFSET_TOP + AI_VIEW_HEIGHT) - ai->inputHeight - 2;
+
+    s32 chatBottom = ai->inputY - 3;
+    s32 chatViewH = chatBottom - CHAT_TOP;
+
     // Calculate total height of messages
     totalHeight = 6;
     for (i = 0; i < ai->messageCount; i++)
@@ -1353,7 +1486,7 @@ static void tick(AiEditor* ai)
         totalHeight += AI_LINE_HEIGHT + 6;
     }
 
-    ai->maxScroll = totalHeight > CHAT_VIEW_H ? totalHeight - CHAT_VIEW_H : 0;
+    ai->maxScroll = totalHeight > chatViewH ? totalHeight - chatViewH : 0;
     if (ai->scroll > ai->maxScroll) ai->scroll = ai->maxScroll;
     if (ai->scroll < 0) ai->scroll = 0;
 
@@ -1374,7 +1507,7 @@ static void tick(AiEditor* ai)
         s32 wrapX = (msg->type == AI_MSG_USER || msg->type == AI_MSG_AGENT) ? (CHAT_X_LEFT + 16) : CHAT_X_LEFT;
         s32 msgH = measureTextHeightEx(ai, msg->text, firstX, wrapX);
 
-        if (curY + msgH >= CHAT_TOP && curY < CHAT_BOTTOM)
+        if (curY + msgH >= CHAT_TOP && curY < chatBottom)
         {
             // Right-click to copy message
             if (rclick && mx >= CHAT_X_LEFT && mx < CHAT_X_RIGHT && my >= curY && my < curY + msgH)
@@ -1384,21 +1517,21 @@ static void tick(AiEditor* ai)
 
             if (msg->type == AI_MSG_USER)
             {
-                drawTextUTF8(ai, "[YOU]:", CHAT_X_LEFT, curY, colLightBlue, CHAT_TOP, CHAT_BOTTOM);
-                drawTextUTF8Ex(ai, msg->text, firstX, wrapX, curY, colCyan, CHAT_TOP, CHAT_BOTTOM);
+                drawTextUTF8(ai, "[YOU]:", CHAT_X_LEFT, curY, colLightBlue, CHAT_TOP, chatBottom);
+                drawTextUTF8Ex(ai, msg->text, firstX, wrapX, curY, colCyan, CHAT_TOP, chatBottom);
             }
             else if (msg->type == AI_MSG_STATUS)
             {
-                drawTextUTF8(ai, msg->text, CHAT_X_LEFT, curY, colGreen, CHAT_TOP, CHAT_BOTTOM);
+                drawTextUTF8(ai, msg->text, CHAT_X_LEFT, curY, colGreen, CHAT_TOP, chatBottom);
             }
             else if (msg->type == AI_MSG_ERROR)
             {
-                drawTextUTF8(ai, msg->text, CHAT_X_LEFT, curY, colRed, CHAT_TOP, CHAT_BOTTOM);
+                drawTextUTF8(ai, msg->text, CHAT_X_LEFT, curY, colRed, CHAT_TOP, chatBottom);
             }
             else
             {
-                drawTextUTF8(ai, "[OpenTIC]:", CHAT_X_LEFT, curY, colPurple, CHAT_TOP, CHAT_BOTTOM);
-                drawTextUTF8Ex(ai, msg->text, firstX, wrapX, curY, colWhite, CHAT_TOP, CHAT_BOTTOM);
+                drawTextUTF8(ai, "[OpenTIC]:", CHAT_X_LEFT, curY, colPurple, CHAT_TOP, chatBottom);
+                drawTextUTF8Ex(ai, msg->text, firstX, wrapX, curY, colWhite, CHAT_TOP, chatBottom);
             }
         }
         curY += msgH + 6;
@@ -1408,37 +1541,54 @@ static void tick(AiEditor* ai)
     {
         static const char* Dots[] = {"thinking .", "thinking ..", "thinking ...", "thinking ...."};
         const char* dot = Dots[(ai->tickCounter / 15) % 4];
-        drawTextUTF8(ai, dot, CHAT_X_LEFT, curY, colYellow, CHAT_TOP, CHAT_BOTTOM);
+        drawTextUTF8(ai, dot, CHAT_X_LEFT, curY, colYellow, CHAT_TOP, chatBottom);
     }
 
-    // Bottom input bar
-    hiresRect(ai, AI_OFFSET_LEFT, INPUT_Y, AI_VIEW_WIDTH, INPUT_H, colDarkGrey);
-    hiresRect(ai, AI_OFFSET_LEFT, INPUT_Y, AI_VIEW_WIDTH, 1, colGrey);
+    // Bottom auto-expanding input bar
+    hiresRect(ai, AI_OFFSET_LEFT, ai->inputY, AI_VIEW_WIDTH, ai->inputHeight, colDarkGrey);
+    hiresRect(ai, AI_OFFSET_LEFT, ai->inputY, AI_VIEW_WIDTH, 1, colGrey);
 
-    drawTextUTF8(ai, ">", AI_OFFSET_LEFT + 6, INPUT_Y + 2, colYellow, INPUT_Y, INPUT_Y + INPUT_H);
-    if (ai->inputLen > 0)
+    drawTextUTF8(ai, ">", AI_OFFSET_LEFT + 6, ai->inputY + 3, colYellow, ai->inputY, ai->inputY + ai->inputHeight);
+    if (ai->inputLen > 0 || ai->compositionLen > 0)
     {
-        drawTextUTF8(ai, ai->input, AI_OFFSET_LEFT + 22, INPUT_Y + 2, colWhite, INPUT_Y, INPUT_Y + INPUT_H);
+        for (s32 li = 0; li < numInputLines; li++)
+        {
+            s32 lStart = inputLinesInfo[li].start;
+            s32 lEnd = inputLinesInfo[li].end;
+            s32 lineLen = lEnd - lStart;
+            if (lineLen > 0)
+            {
+                char lineBuf[AI_INPUT_MAX];
+                if (lineLen >= AI_INPUT_MAX) lineLen = AI_INPUT_MAX - 1;
+                memcpy(lineBuf, &ai->input[lStart], lineLen);
+                lineBuf[lineLen] = '\0';
+                drawTextUTF8(ai, lineBuf, AI_OFFSET_LEFT + 22, ai->inputY + 3 + li * AI_LINE_HEIGHT, colWhite, ai->inputY, ai->inputY + ai->inputHeight);
+            }
+        }
     }
     else
     {
-        drawTextUTF8(ai, "输入指令让 OpenTIC 修改代码或素材 (输入 / 唤起菜单)...", AI_OFFSET_LEFT + 22, INPUT_Y + 2, colGrey, INPUT_Y, INPUT_Y + INPUT_H);
+        drawTextUTF8(ai, "输入指令让 OpenTIC 修改代码或素材 (输入 / 唤起菜单)...", AI_OFFSET_LEFT + 22, ai->inputY + 3, colGrey, ai->inputY, ai->inputY + ai->inputHeight);
+    }
+
+    // Multi-line cursor & IME composition
+    s32 curCursorX = AI_OFFSET_LEFT + 22 + cursorColX;
+    s32 curCursorY = ai->inputY + 3 + cursorLineIdx * AI_LINE_HEIGHT;
+
+    // Draw active composition text (Pinyin candidate preview with underline)
+    if (ai->compositionLen > 0)
+    {
+        s32 compW = drawTextUTF8(ai, ai->composition, curCursorX, curCursorY, colYellow, ai->inputY, ai->inputY + ai->inputHeight);
+        hiresRect(ai, curCursorX, curCursorY + 14, compW > 0 ? compW : 8, 1, colYellow);
+        curCursorX += compW;
     }
 
     // Blinking cursor
     if ((ai->tickCounter / 20) % 2 == 0)
     {
-        s32 cursorX = AI_OFFSET_LEFT + 22;
-        if (ai->cursor > 0)
+        if (curCursorX < CHAT_X_RIGHT)
         {
-            char sub[AI_INPUT_MAX];
-            strncpy(sub, ai->input, ai->cursor);
-            sub[ai->cursor] = '\0';
-            cursorX = AI_OFFSET_LEFT + 22 + measureTextWidth(ai, sub);
-        }
-        if (cursorX < CHAT_X_RIGHT)
-        {
-            hiresRect(ai, cursorX, INPUT_Y + 3, 1, 14, colWhite);
+            hiresRect(ai, curCursorX, curCursorY, 2, 14, colWhite);
         }
     }
 
@@ -1457,6 +1607,11 @@ void ai_handle_text_input(AiEditor* ai, const char* text)
     s32 addLen;
     if (!text || !*text) return;
 
+    // Committed text clears composition
+    ai->composition[0] = '\0';
+    ai->compositionLen = 0;
+    ai->compositionCursor = 0;
+
     addLen = (s32)strlen(text);
     if (ai->inputLen + addLen < AI_INPUT_MAX - 1)
     {
@@ -1467,6 +1622,33 @@ void ai_handle_text_input(AiEditor* ai, const char* text)
         ai->input[ai->inputLen] = '\0';
         updateSlashPopup(ai);
     }
+}
+
+void ai_handle_text_editing(AiEditor* ai, const char* text, s32 start, s32 length)
+{
+    if (!ai) return;
+    if (text && *text)
+    {
+        strncpy(ai->composition, text, sizeof(ai->composition) - 1);
+        ai->composition[sizeof(ai->composition) - 1] = '\0';
+        ai->compositionLen = (s32)strlen(ai->composition);
+        ai->compositionCursor = start;
+    }
+    else
+    {
+        ai->composition[0] = '\0';
+        ai->compositionLen = 0;
+        ai->compositionCursor = 0;
+    }
+}
+
+void ai_get_input_rect(AiEditor* ai, s32* x, s32* y, s32* w, s32* h)
+{
+    if (!ai) return;
+    if (x) *x = AI_OFFSET_LEFT + 22;
+    if (y) *y = ai->inputY > 0 ? ai->inputY : (AI_OFFSET_TOP + AI_VIEW_HEIGHT - 22);
+    if (w) *w = AI_VIEW_WIDTH - 30;
+    if (h) *h = ai->inputHeight > 0 ? ai->inputHeight : 22;
 }
 
 static void event(AiEditor* ai, StudioEvent ev)
@@ -1515,6 +1697,13 @@ void initAi(AiEditor* ai, Studio* studio)
     ai->tic = studio ? getMemory(studio) : NULL;
     ai->tick = tick;
     ai->event = event;
+
+    ai->inputLines = 1;
+    ai->inputHeight = 22;
+    ai->inputY = (AI_OFFSET_TOP + AI_VIEW_HEIGHT) - 22;
+    ai->composition[0] = '\0';
+    ai->compositionLen = 0;
+    ai->compositionCursor = 0;
 
     if (!ai->hiresScreen)
     {

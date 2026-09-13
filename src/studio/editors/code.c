@@ -951,13 +951,33 @@ static void downLine(Code* code)
     code->cursor.position = nextLine + (nextSize > size ? size : nextSize);
 }
 
+static inline s32 utf8CharLength(const char* ptr)
+{
+    u8 c = (u8)*ptr;
+    if (c < 0x80) return 1;
+    if ((c & 0xE0) == 0xC0) return 2;
+    if ((c & 0xF0) == 0xE0) return 3;
+    if ((c & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+static inline s32 utf8PrevCharLength(const char* start, const char* pos)
+{
+    if (pos <= start) return 0;
+    const char* p = pos - 1;
+    while (p > start && ((u8)*p & 0xC0) == 0x80 && (pos - p) < 4)
+        p--;
+    return (s32)(pos - p);
+}
+
 static void leftColumn(Code* code)
 {
     char* start = code->src;
 
     if(code->cursor.position > start)
     {
-        code->cursor.position--;
+        s32 step = utf8PrevCharLength(start, code->cursor.position);
+        code->cursor.position -= (step > 0 ? step : 1);
         updateColumn(code);
     }
 }
@@ -966,7 +986,8 @@ static void rightColumn(Code* code)
 {
     if(*code->cursor.position)
     {
-        code->cursor.position++;
+        s32 step = utf8CharLength(code->cursor.position);
+        code->cursor.position += step;
         updateColumn(code);
     }
 }
@@ -1270,7 +1291,8 @@ static void deleteChar(Code* code)
         if (structuredDeleteOverride(code, code->cursor.position))
             return;
 
-        deleteCode(code, code->cursor.position, code->cursor.position + 1);
+        s32 step = utf8CharLength(code->cursor.position);
+        deleteCode(code, code->cursor.position, code->cursor.position + step);
         history(code);
         parseSyntaxColor(code);
     }
@@ -1282,12 +1304,15 @@ static void backspaceChar(Code* code)
 {
     if(!replaceSelection(code) && code->cursor.position > code->src)
     {
-        char* pos = --code->cursor.position;
+        s32 step = utf8PrevCharLength(code->src, code->cursor.position);
+        if (step <= 0) step = 1;
+        char* pos = code->cursor.position - step;
+        code->cursor.position = pos;
 
         if (structuredDeleteOverride(code, pos))
             return;
 
-        deleteCode(code, pos, pos + 1);
+        deleteCode(code, pos, pos + step);
         history(code);
         parseSyntaxColor(code);
     }
@@ -3999,4 +4024,18 @@ void trimWhitespace(Code* code)
 
     history(code);
     update(code);
+}
+
+void code_insert_text(Code* code, const char* text)
+{
+    if (!code || !text || !*text) return;
+    replaceSelection(code);
+    size_t len = strlen(text);
+    if (strlen(code->src) + len >= MAX_CODE) return;
+    insertCode(code, code->cursor.position, text);
+    code->cursor.position += len;
+    history(code);
+    updateColumn(code);
+    parseSyntaxColor(code);
+    updateEditor(code);
 }

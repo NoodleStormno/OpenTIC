@@ -1386,10 +1386,53 @@ void startBridgeService(Studio* studio)
 void studio_text_input(Studio* studio, const char* text)
 {
     if (!studio || !text) return;
+#if defined(BUILD_EDITORS)
     if (studio->mode == TIC_AI_MODE && studio->ai)
     {
         ai_handle_text_input(studio->ai, text);
     }
+    else if (studio->mode == TIC_CODE_MODE && studio->code)
+    {
+        // Only insert UTF-8 / non-ASCII characters directly here.
+        // ASCII characters are handled by code.c's getKeyboardText().
+        if ((u8)text[0] >= 0x80 || strlen(text) > 1)
+        {
+            code_insert_text(studio->code, text);
+        }
+    }
+#endif
+}
+
+void studio_text_editing(Studio* studio, const char* text, s32 start, s32 length)
+{
+    if (!studio) return;
+#if defined(BUILD_EDITORS)
+    if (studio->mode == TIC_AI_MODE && studio->ai)
+    {
+        ai_handle_text_editing(studio->ai, text, start, length);
+    }
+#endif
+}
+
+void studio_get_ime_rect(Studio* studio, s32* x, s32* y, s32* w, s32* h)
+{
+    if (!studio) return;
+#if defined(BUILD_EDITORS)
+    if (studio->mode == TIC_AI_MODE && studio->ai)
+    {
+        ai_get_input_rect(studio->ai, x, y, w, h);
+        return;
+    }
+#endif
+    if (x) *x = 16;
+    if (y) *y = 260;
+    if (w) *w = 480;
+    if (h) *h = 24;
+}
+
+bool studio_is_ai_mode(Studio* studio)
+{
+    return studio && studio->mode == TIC_AI_MODE;
 }
 
 const char* studio_get_cart_name(Studio* studio)
@@ -1468,6 +1511,19 @@ const u32* studio_get_hires_screen(Studio* studio, s32* w, s32* h)
     if (studio->mode == TIC_AI_MODE && studio->ai)
     {
         return studio_ai_get_screen(studio->ai, w, h);
+    }
+    else if (studio->mode == TIC_CODE_MODE && studio->code)
+    {
+        studio_hires_draw_code(studio, studio->code);
+        return studio_hires_get_screen(studio);
+    }
+#endif
+
+#if defined(BUILD_EDITORS) || defined(BUILD_SURF)
+    if ((studio->mode == TIC_CONSOLE_MODE || studio->mode == TIC_START_MODE) && studio->console)
+    {
+        studio_hires_draw_console(studio, studio->console);
+        return studio_hires_get_screen(studio);
     }
 #endif
 
@@ -2530,6 +2586,7 @@ static void updateSystemFont(Studio* studio)
                 if(tic_tool_peek4(&studio->config->cart->bank0.sprites.data[i], TIC_SPRITESIZE*y + x))
                     dst[i*BITS_IN_BYTE+y] |= 1 << x;
 
+    studio_hires_update_system_font(tic, &studio->systemFont);
     tic->ram->font = studio->systemFont;
 }
 
