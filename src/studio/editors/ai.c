@@ -584,12 +584,14 @@ typedef struct {
 } SlashCmd;
 
 static const SlashCmd g_SlashCmds[] = {
-    {"/key",    "/key <provider> <key>", "配置 API Key (DeepSeek/OpenAI)", "/key ",   true},
-    {"/model",  "/model <name>",         "切换大模型 (如 deepseek-chat)",  "/model ", true},
-    {"/status", "/status",               "查看当前配置与 Bridge 状态",     "/status", false},
-    {"/undo",   "/undo",                 "撤销上次 AI 修改的代码",         "/undo",   false},
-    {"/clear",  "/clear",                "清空对话历史",                   "/clear",  false},
-    {"/help",   "/help",                 "使用说明帮助",                   "/help",   false}
+    {"/key",      "/key <provider> <key>", "配置 API Key (DeepSeek/OpenAI)", "/key ",       true},
+    {"/model",    "/model <name>",         "切换大模型 (如 deepseek-chat)",  "/model ",     true},
+    {"/thinking", "/thinking <level>",     "设置思考强度 (off/low/high等)",  "/thinking ",  true},
+    {"/status",   "/status",               "查看当前配置与 Bridge 状态",     "/status",     false},
+    {"/undo",     "/undo",                 "撤销上次 AI 修改的代码",         "/undo",       false},
+    {"/reset",    "/reset",                "重置当前卡带对话上下文",         "/reset",      false},
+    {"/clear",    "/clear",                "清空对话历史",                   "/clear",      false},
+    {"/help",     "/help",                 "使用说明帮助",                   "/help",       false}
 };
 
 #define SLASH_CMD_COUNT ((s32)(sizeof(g_SlashCmds) / sizeof(g_SlashCmds[0])))
@@ -938,8 +940,10 @@ static void sendUserPrompt(AiEditor* ai)
             "/key <provider> <key> : 配置 API Key (如 deepseek, openai)\n"
             "/key <key>            : 快速设置默认 Key (sk-xxxx)\n"
             "/model <name>         : 切换大模型 (如 deepseek-chat)\n"
-            "/status               : 查看当前模型与 Bridge 状态\n"
+            "/thinking <level>     : 设置思考强度 (off, low, high 等)\n"
+            "/status               : 查看当前模型、思考强度与 Bridge 状态\n"
             "/undo                 : 撤销上次 AI 修改的代码\n"
+            "/reset                : 重置当前卡带连续对话上下文\n"
             "/clear                : 清空对话历史\n"
             "直接输入自然语言即可让 AI 实时修改当前游戏代码！");
         ai->input[0] = '\0';
@@ -1000,6 +1004,7 @@ static void sendUserPrompt(AiEditor* ai)
         ai->pollingStatus = false;
         ai->pollCooldown = 0;
         ai->thinkTicks = 0;
+        ai->hasSyncedCurrentTask = false;
     }
     else
     {
@@ -1284,19 +1289,26 @@ static void tick(AiEditor* ai)
                 }
                 else
                 {
+                    bool codeUpdated = (strstr(body, "\"code_updated\":true") != NULL);
+                    if (codeUpdated && !ai->hasSyncedCurrentTask)
+                    {
+                        ai->hasSyncedCurrentTask = true;
+                        hotReloadCart(ai, NULL);
+                    }
+
                     if (strstr(body, "\"status\":\"done\""))
                     {
-                        bool codeUpdated = (strstr(body, "\"code_updated\":true") != NULL);
+                        if (codeUpdated && !ai->hasSyncedCurrentTask)
+                        {
+                            ai->hasSyncedCurrentTask = true;
+                            hotReloadCart(ai, NULL);
+                        }
+
                         const char* msgStart = strstr(body, "\"message\":\"");
                         char msgBuf[1024] = "已为您修改完成。";
                         if (msgStart)
                         {
                             unescapeJsonString(msgBuf, msgStart + 11, sizeof(msgBuf));
-                        }
-
-                        if (codeUpdated)
-                        {
-                            hotReloadCart(ai, NULL);
                         }
 
                         addMessage(ai, AI_MSG_AGENT, msgBuf);

@@ -6,16 +6,19 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 const PORT = process.env.TIC_OMP_PORT || 8080;
 const OMP_DIR = path.resolve('E:/oh-my-pi');
 const OMP_EXE = path.join(OMP_DIR, 'omp.exe');
 const CONFIG_FILE = path.join(process.env.USERPROFILE || process.env.HOME || '.', '.tic_omp_keys.json');
+const SESSIONS_BASE_DIR = path.join(process.env.USERPROFILE || process.env.HOME || '.', '.tic_omp_sessions');
 const LOG_FILE = path.join(__dirname, 'bridge.log');
 
 let currentTask = null;
 let activeModel = null;
+let activeThinking = 'low';
 
 function log(...args) {
     const time = new Date().toISOString();
@@ -62,7 +65,10 @@ function loadSavedConfig() {
             } else if (process.env.DEEPSEEK_API_KEY) {
                 activeModel = 'deepseek-flash';
             }
-            log('[Bridge] Loaded saved config from', CONFIG_FILE, 'keys:', Object.keys(data.keys || {}), 'model:', activeModel);
+            if (data.thinking) {
+                activeThinking = data.thinking.toLowerCase();
+            }
+            log('[Bridge] Loaded saved config from', CONFIG_FILE, 'keys:', Object.keys(data.keys || {}), 'model:', activeModel, 'thinking:', activeThinking);
         }
     } catch (e) {
         log('[Bridge] Could not load saved config:', e.message);
@@ -87,7 +93,7 @@ function normalizeModelName(name) {
 function saveConfigKey(envName, value) {
     process.env[envName] = value;
     try {
-        let data = { keys: {}, activeModel: activeModel || '' };
+        let data = { keys: {}, activeModel: activeModel || '', thinking: activeThinking || 'low' };
         if (fs.existsSync(CONFIG_FILE)) {
             data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) || data;
         }
@@ -103,7 +109,7 @@ function saveConfigKey(envName, value) {
 function saveActiveModel(modelName) {
     activeModel = normalizeModelName(modelName);
     try {
-        let data = { keys: {}, activeModel: '' };
+        let data = { keys: {}, activeModel: '', thinking: activeThinking || 'low' };
         if (fs.existsSync(CONFIG_FILE)) {
             data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) || data;
         }
@@ -113,6 +119,55 @@ function saveActiveModel(modelName) {
     } catch (e) {
         log('[Bridge] Could not save activeModel:', e.message);
     }
+}
+
+function saveActiveThinking(level) {
+    activeThinking = (level || 'low').toLowerCase();
+    try {
+        let data = { keys: {}, activeModel: activeModel || '', thinking: 'low' };
+        if (fs.existsSync(CONFIG_FILE)) {
+            data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) || data;
+        }
+        data.thinking = activeThinking;
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2), 'utf8');
+        log(`[Bridge] Saved activeThinking ${activeThinking} to ${CONFIG_FILE}`);
+    } catch (e) {
+        log('[Bridge] Could not save activeThinking:', e.message);
+    }
+}
+
+function getCartridgeSessionDir(targetFile) {
+    const hash = crypto.createHash('md5').update(targetFile.toLowerCase()).digest('hex').substring(0, 12);
+    const safeName = path.basename(targetFile).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const sessDir = path.join(SESSIONS_BASE_DIR, `${safeName}_${hash}`);
+    if (!fs.existsSync(sessDir)) {
+        fs.mkdirSync(sessDir, { recursive: true });
+    }
+    return sessDir;
+}
+
+function hasExistingSession(sessDir) {
+    try {
+        if (!fs.existsSync(sessDir)) return false;
+        const files = fs.readdirSync(sessDir);
+        return files.some(f => f.endsWith('.jsonl') && fs.statSync(path.join(sessDir, f)).size > 0);
+    } catch {
+        return false;
+    }
+}
+
+function resetCartridgeSession(targetFile) {
+    try {
+        const sessDir = getCartridgeSessionDir(targetFile);
+        if (fs.existsSync(sessDir)) {
+            fs.rmSync(sessDir, { recursive: true, force: true });
+            log(`[Bridge] Session reset for: ${targetFile} at ${sessDir}`);
+            return true;
+        }
+    } catch (e) {
+        log('[Bridge] Could not reset session:', e.message);
+    }
+    return false;
 }
 
 // Load saved config on startup
@@ -727,6 +782,46 @@ function handleChatRequest(data, res) {
             return;
         }
 
+        if (cmd === '/thinking' || cmd === '/reasoning') {
+            const validLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'];
+            if (parts.length >= 2) {
+                const requested = parts[1].toLowerCase();
+                if (validLevels.includes(requested)) {
+                    saveActiveThinking(requested);
+                    currentTask = {
+                        status: 'done',
+                        code_updated: false,
+                        message: `已将模型思考/推理强度 (Reasoning Effort) 切换为: ${activeThinking}\n后续指令将携带 --thinking=${activeThinking}。`
+                    };
+                } else {
+                    currentTask = {
+                        status: 'done',
+                        code_updated: false,
+                        message: `不支持的思考强度: "${parts[1]}"\n可选值: ${validLevels.join(', ')}\n示例: /thinking high 或 /thinking off`
+                    };
+                }
+            } else {
+                currentTask = {
+                    status: 'done',
+                    code_updated: false,
+                    message: `当前思考强度 (Reasoning Effort): ${activeThinking}\n【用法】/thinking <level>\n可选值: ${validLevels.join(', ')}\n示例: /thinking high 或 /thinking low`
+                };
+            }
+            sendJson(res, 200, { status: 'started', targetFile });
+            return;
+        }
+
+        if (cmd === '/reset' || cmd === '/new') {
+            resetCartridgeSession(targetFile);
+            currentTask = {
+                status: 'done',
+                code_updated: false,
+                message: `已成功重置当前卡带 (${path.basename(targetFile)}) 的 AI 连续会话上下文！\n下次修改将重新初始化完整会话与系统指令。`
+            };
+            sendJson(res, 200, { status: 'started', targetFile });
+            return;
+        }
+
         if (cmd === '/status') {
             const configuredKeys = [];
             for (const [p, env] of Object.entries(PROVIDER_MAP)) {
@@ -740,6 +835,9 @@ function handleChatRequest(data, res) {
                 ? configuredKeys.join(', ')
                 : '未配置 (请输入 /key <provider> <key> 进行设置)';
 
+            const sessDir = getCartridgeSessionDir(targetFile);
+            const sessActive = hasExistingSession(sessDir);
+
             currentTask = {
                 status: 'done',
                 code_updated: false,
@@ -747,7 +845,9 @@ function handleChatRequest(data, res) {
                          `- Bridge 服务: 运行中 (http://127.0.0.1:${PORT})\n` +
                          `- 已就绪 Key: ${keyDesc}\n` +
                          `- 当前模型: ${activeModel || '默认自动'}\n` +
+                         `- 思考强度 (Reasoning): ${activeThinking}\n` +
                          `- 目标卡带: ${path.basename(targetFile)}\n` +
+                         `- 会话状态: ${sessActive ? '持续会话中 (增量快速响应)' : '未初始化 (首次对话将注入系统指令)'}\n` +
                          `- 文件路径: ${targetFile}`
             };
             sendJson(res, 200, { status: 'started', targetFile });
@@ -861,7 +961,13 @@ function prepareCartContext(beforeContent, userPrompt) {
 function executeAgent(targetFile, userPrompt, beforeStats, beforeContent) {
     const fileName = path.basename(targetFile);
     const cartContext = prepareCartContext(beforeContent, userPrompt);
-    const fullPrompt = `${TIC80_SYSTEM_PROMPT}
+    const sessDir = getCartridgeSessionDir(targetFile);
+    const isContinuingSession = hasExistingSession(sessDir);
+
+    let promptToSend = '';
+    if (!isContinuingSession) {
+        // First turn: include full TIC80_SYSTEM_PROMPT to initialize session
+        promptToSend = `${TIC80_SYSTEM_PROMPT}
 
 ### Target File:
 ${targetFile}
@@ -873,29 +979,52 @@ ${cartContext}
 
 ### User Request:
 ${userPrompt}
+
+Directive: Strictly modify the target file using your edit tool. Output only a brief 1-line confirmation when done.
 `;
+    } else {
+        // Subsequent turns: persistent session! Only send cartridge context and user request!
+        promptToSend = `### Target File:
+${targetFile}
+
+### Current Cartridge Code (\`${fileName}\`):
+\`\`\`lua
+${cartContext}
+\`\`\`
+
+### User Request:
+${userPrompt}
+
+Directive: Strictly modify the target file using your edit tool. Output only a brief 1-line confirmation when done.
+`;
+    }
 
     let ompProcess;
     const ompBin = fs.existsSync(OMP_EXE) ? OMP_EXE : 'omp';
 
     log(`[Bridge] Invoking agent for file: ${targetFile}`);
     log(`[Bridge] User prompt: ${userPrompt}`);
+    log(`[Bridge] Session mode: ${isContinuingSession ? 'Continue (-c)' : 'Initial'}, Dir: ${sessDir}`);
     let modelToUse = normalizeModelName(activeModel || (process.env.DEEPSEEK_API_KEY ? 'deepseek-flash' : ''));
-    if (modelToUse) log(`[Bridge] Using model: ${modelToUse}`);
+    if (modelToUse) log(`[Bridge] Using model: ${modelToUse}, thinking: ${activeThinking}`);
 
     try {
         const args = [
             '--auto-approve',
             '--allow-home',
-            '--no-session',
-            '--tools', 'read,edit,write',
+            '--tools', 'edit',
             '--no-title',
-            '--thinking=low'
+            `--thinking=${activeThinking}`,
+            '--session-dir', sessDir
         ];
+        if (isContinuingSession) {
+            args.push('-c');
+        }
         if (modelToUse) {
             args.push('--model', modelToUse);
         }
-        args.push('-p', fullPrompt);
+        args.push('-p', promptToSend);
+
         log(`[Bridge] Spawning: ${ompBin}`, args);
         ompProcess = spawn(ompBin, args, {
             cwd: path.dirname(targetFile),
@@ -907,10 +1036,32 @@ ${userPrompt}
         let stdoutData = '';
         let stderrData = '';
         let timedOut = false;
+        let fileChangedDetected = false;
+
+        // Monitor targetFile mtime and content in real time so OpenTIC can hot-reload immediately!
+        const fileCheckInterval = setInterval(() => {
+            if (fileChangedDetected || !ompProcess) return;
+            try {
+                if (fs.existsSync(targetFile)) {
+                    const curContent = fs.readFileSync(targetFile, 'utf8');
+                    if (curContent !== beforeContent) {
+                        fileChangedDetected = true;
+                        log(`[Bridge] Real-time file change detected! (${beforeContent.length} -> ${curContent.length} bytes)`);
+                        currentTask.code_updated = true;
+                        currentTask.new_code = curContent;
+                        currentTask.status = 'modifying';
+                        currentTask.summary = '检测到代码已写入磁盘，正在同步卡带...';
+                    }
+                }
+            } catch (err) {
+                // Ignore transient errors during write
+            }
+        }, 150);
 
         const timer = setTimeout(() => {
             if (ompProcess && !ompProcess.killed) {
                 timedOut = true;
+                clearInterval(fileCheckInterval);
                 log('[Bridge] Agent timed out after 3600s');
                 ompProcess.kill();
                 currentTask = {
@@ -932,6 +1083,7 @@ ${userPrompt}
 
         ompProcess.on('close', code => {
             clearTimeout(timer);
+            clearInterval(fileCheckInterval);
             if (timedOut) return;
 
             log(`[Bridge] Agent finished with code: ${code}`);
@@ -951,6 +1103,9 @@ ${userPrompt}
                     userErrMsg = '当前所选模型未配置有效 API Key！请使用 /key 配置对应服务商，或输入 /model deepseek-flash 切换。';
                 } else if (rawErr.includes('No models available')) {
                     userErrMsg = '当前无可用模型。请确认 API Key 是否有效，或输入 /key 重新设置。';
+                } else if (rawErr.includes('session') || rawErr.includes('corrupt') || rawErr.includes('resume')) {
+                    resetCartridgeSession(targetFile);
+                    userErrMsg = `会话文件异常，已自动重置会话缓存: ${rawErr.substring(0, 150)}`;
                 } else if (userErrMsg.length > 200) {
                     userErrMsg = userErrMsg.substring(0, 200) + '...';
                 }
@@ -994,6 +1149,7 @@ ${userPrompt}
 
         ompProcess.on('error', err => {
             clearTimeout(timer);
+            clearInterval(fileCheckInterval);
             log('[Bridge] Failed to launch agent:', err);
             currentTask = {
                 status: 'error',

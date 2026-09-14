@@ -51,6 +51,7 @@ struct AiEditor
     bool pollingStatus;
     s32 thinkTicks;
     s32 pollCooldown;
+    bool hasSyncedCurrentTask;
 
     // Font rendering via stb_truetype
     bool fontLoaded;
